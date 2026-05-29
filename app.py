@@ -1,44 +1,71 @@
 """
-Interactive comparison dashboard — Spectrum extract vs leapfrog-goals.
+Interactive comparison dashboard — Spectrum vs leapfrog-goals.
 
 Usage:
     uv run shiny run app.py
-
-Pre-requisites:
-    - Run scripts/run_extract.py to produce the extract XLSX in output/extract/
-    - Run scripts/run_goals_model.py to produce .npz files in output/goals/
-
-The dashboard auto-detects available data on startup.
 """
 
 from pathlib import Path
 
+import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from shiny import App, reactive, render, ui
 
 import leapfrog_compare.config as config
-from leapfrog_compare.extract_reader import read_extract_xlsx, get_pjnz_names, filter_extract
-from leapfrog_compare.indicator_map import INDICATOR_MAP, get_indicator_names, compute_goals_series
-from leapfrog_compare.pjnz_runner import load_goals_output
+from leapfrog_compare.indicator_map import (
+    AGE_LABELS, INDICATOR_MAP, get_indicator_names,
+)
+from leapfrog_compare.pjnz_runner import run_pjnz
 
-EXTRACT_FILE = config.EXTRACT_OUTPUT_FILE
-GOALS_DIR = config.GOALS_OUTPUT_DIR
+# Colors assigned per demographic group (e.g. "Male", "Female", "Total", "0-4").
+# Leapfrog = solid line; Spectrum = dashed line in the same color.
+_PALETTE = [
+    "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
+    "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
+    "#aec7e8", "#ffbb78", "#98df8a", "#ff9896", "#c5b0d5",
+    "#c49c94", "#f7b6d2",
+]
 
 ALL_INDICATOR_NAMES = get_indicator_names()
-
 _DEFAULT_YEAR_MIN = 1970
 _DEFAULT_YEAR_MAX = 2030
+_N_AGE_GROUPS = len(AGE_LABELS)
+
+_pjnz_files: dict[str, Path] = {
+    p.stem: p
+    for p in sorted(config.PJNZ_DIR.glob("*.PJNZ"))
+}
+_pjnz_stems = list(_pjnz_files.keys())
 
 
-def _find_extract_file() -> Path | None:
-    return EXTRACT_FILE if EXTRACT_FILE.exists() else None
+def _series_for_age_cell(
+    all_series: list[tuple[str, np.ndarray]],
+    age_label: str,
+) -> list[tuple[str, np.ndarray]]:
+    """Extract series for one age-group column from a fully disaggregated series list."""
+    cell: list[tuple[str, np.ndarray]] = []
+    for label, values in all_series:
+        if " / " in label:
+            a_part, s_part = label.split(" / ", 1)
+            if a_part == age_label:
+                cell.append((s_part, values))
+        elif label == age_label:
+            cell.append(("Total", values))
+    if not cell:
+        # No age breakdown for this indicator (e.g. Births) — fall back to totals
+        for label, values in all_series:
+            if " / " not in label:
+                cell.append((label, values))
+    return cell
 
 
-def _find_goals_files() -> dict[str, Path]:
-    if not GOALS_DIR.exists():
-        return {}
-    return {p.stem: p for p in sorted(GOALS_DIR.glob("*.npz"))}
+def _leapfrog_label(demo: str) -> str:
+    return "Leapfrog" if demo == "Total" else f"Leapfrog {demo}"
+
+
+def _spectrum_label(demo: str) -> str:
+    return "Spectrum" if demo == "Total" else f"Spectrum {demo}"
 
 
 # ---------------------------------------------------------------------------
@@ -50,46 +77,50 @@ app_ui = ui.page_fluid(
         ui.tags.script(src="https://cdn.plot.ly/plotly-latest.min.js"),
     ),
     ui.page_sidebar(
-    ui.sidebar(
-        ui.h5("Filters"),
-        ui.input_selectize(
-            "pjnz",
-            label="PJNZ",
-            choices=[],
+        ui.sidebar(
+            ui.h5("Filters"),
+            ui.input_selectize(
+                "pjnz",
+                label="PJNZ",
+                choices=_pjnz_stems,
+                selected=_pjnz_stems[0] if _pjnz_stems else None,
+            ),
+            ui.hr(),
+            ui.input_selectize(
+                "indicators",
+                label="Indicators",
+                choices=ALL_INDICATOR_NAMES,
+                multiple=True,
+                selected=ALL_INDICATOR_NAMES[:3],
+                options={"plugins": ["remove_button"]},
+            ),
+            ui.hr(),
+            ui.input_slider(
+                "year_range",
+                "Year range",
+                min=_DEFAULT_YEAR_MIN,
+                max=_DEFAULT_YEAR_MAX,
+                value=[_DEFAULT_YEAR_MIN, _DEFAULT_YEAR_MAX],
+                step=1,
+                sep="",
+            ),
+            ui.hr(),
+            ui.h6("Disaggregation"),
+            ui.input_checkbox("disagg_age", "By age group", value=False),
+            ui.input_checkbox("disagg_sex", "By sex", value=False),
+            width=320,
         ),
-        ui.hr(),
-        ui.input_selectize(
-            "indicators",
-            label="Indicators",
-            choices=ALL_INDICATOR_NAMES,
-            multiple=True,
-            selected=ALL_INDICATOR_NAMES[:3],
-            options={"plugins": ["remove_button"]},
+        ui.card(
+            ui.card_header("Spectrum vs Leapfrog"),
+            ui.div(
+                ui.output_ui("comparison_plot"),
+                style="overflow-x: auto; overflow-y: auto;",
+            ),
+            full_screen=True,
         ),
-        ui.hr(),
-        ui.input_slider(
-            "year_range",
-            "Year range",
-            min=_DEFAULT_YEAR_MIN,
-            max=_DEFAULT_YEAR_MAX,
-            value=[_DEFAULT_YEAR_MIN, _DEFAULT_YEAR_MAX],
-            step=1,
-            sep="",
-        ),
-        ui.hr(),
-        ui.input_action_button("refresh", "Refresh data", class_="btn-sm btn-secondary"),
-        ui.hr(),
-        ui.output_text("status_text"),
-        width=320,
+        title="Leapfrog Comparison",
+        fillable=True,
     ),
-    ui.card(
-        ui.card_header("Spectrum vs Leapfrog"),
-        ui.output_ui("comparison_plot"),
-        full_screen=True,
-    ),
-    title="Leapfrog Comparison",
-    fillable=True,
-)
 )
 
 
@@ -100,155 +131,243 @@ app_ui = ui.page_fluid(
 def server(input, output, session):
 
     @reactive.calc
-    def _loaded_data():
-        """Load (or reload) extract and goals data. Re-runs when Refresh is clicked."""
-        _ = input.refresh()
-
-        df = None
-        xlsx = _find_extract_file()
-        if xlsx is not None:
-            try:
-                df = read_extract_xlsx(xlsx)
-            except Exception as exc:  # noqa: BLE001
-                print(f"[app] Failed to load extract XLSX: {exc}")
-
-        cache: dict = {}
-        for stem, path in _find_goals_files().items():
-            try:
-                out, years = load_goals_output(path)
-                cache[stem] = (out, years)
-            except Exception as exc:  # noqa: BLE001
-                print(f"[app] Failed to load goals output for {stem}: {exc}")
-
-        extract_stems = set(get_pjnz_names(df)) if df is not None else set()
-        all_stems = sorted(extract_stems | set(cache.keys()))
-
-        return df, cache, all_stems
+    def _run_pjnz():
+        pjnz_stem = input.pjnz()
+        if not pjnz_stem or pjnz_stem not in _pjnz_files:
+            return None
+        try:
+            return run_pjnz(_pjnz_files[pjnz_stem])
+        except Exception as exc:
+            print(f"[app] Failed to run {pjnz_stem}: {exc}")
+            return None
 
     @reactive.effect
-    def _update_controls():
-        df, cache, all_stems = _loaded_data()
-
-        ui.update_select("pjnz", choices=all_stems, selected=all_stems[0] if all_stems else None)
-
-        year_vals: list[int] = []
-        for _, (_, years) in cache.items():
-            year_vals.extend(int(y) for y in years)
-        if df is not None and "year" in df.columns:
-            year_vals.extend(int(y) for y in df["year"].dropna())
-        if year_vals:
-            y_min, y_max = min(year_vals), max(year_vals)
-            ui.update_slider("year_range", min=y_min, max=y_max, value=[y_min, y_max])
-
-    @output
-    @render.text
-    def status_text():
-        df, cache, _ = _loaded_data()
-        parts = []
-        if df is None:
-            parts.append("Extract: not loaded")
-        else:
-            parts.append(f"Extract: {df['pjnz_stem'].nunique()} PJNZ(s)")
-        parts.append(f"Goals: {len(cache)} PJNZ(s)")
-        return "\n".join(parts)
+    def _update_year_slider():
+        result = _run_pjnz()
+        if result is None:
+            return
+        _, _, output_years = result
+        y_min, y_max = int(min(output_years)), int(max(output_years))
+        ui.update_slider("year_range", min=y_min, max=y_max, value=[y_min, y_max])
 
     @output
     @render.ui
     def comparison_plot():
-        df, cache, all_stems = _loaded_data()
+        result = _run_pjnz()
+        if result is None:
+            msg = "No PJNZ files found." if not _pjnz_stems else "Loading..."
+            return ui.p(msg)
 
-        pjnz = input.pjnz() or (all_stems[0] if all_stems else None)
-        selected_indicators: tuple[str, ...] = input.indicators()
+        modvars, goals_output, output_years = result
+        selected_indicators = input.indicators()
         year_start, year_end = input.year_range()
+        disagg_age = input.disagg_age()
+        disagg_sex = input.disagg_sex()
 
-        if not pjnz or not selected_indicators:
-            return ui.p("No data available." if not all_stems else "Select at least one indicator.")
+        if not selected_indicators:
+            return ui.p("Select at least one indicator.")
 
-        n = len(selected_indicators)
-        ncols = min(n, 2)
-        nrows = (n + ncols - 1) // ncols
+        years_arr = np.array(list(output_years))
+        mask = (years_arr >= year_start) & (years_arr <= year_end)
+        x_years = years_arr[mask].tolist()
+        first_year = int(min(output_years))
+        n_inds = len(selected_indicators)
 
-        fig = make_subplots(
-            rows=nrows,
-            cols=ncols,
-            subplot_titles=list(selected_indicators),
-            shared_xaxes=False,
-            vertical_spacing=0.12,
-            horizontal_spacing=0.1,
-        )
+        # Colors keyed by demographic group ("Male", "Female", "Total", "0-4", …)
+        # so Leapfrog Male and Spectrum Male share the same color (diff line style).
+        demo_colors: dict[str, str] = {}
+        palette_idx = 0
+        legend_shown: set[str] = set()
 
-        for idx, indicator in enumerate(selected_indicators):
-            row = idx // ncols + 1
-            col = idx % ncols + 1
+        def _color_for(demo: str) -> str:
+            nonlocal palette_idx
+            if demo not in demo_colors:
+                demo_colors[demo] = _PALETTE[palette_idx % len(_PALETTE)]
+                palette_idx += 1
+            return demo_colors[demo]
 
-            # --- Extract series ---
-            if df is not None:
-                defn = INDICATOR_MAP[indicator]
-                ext_series = filter_extract(
-                    df,
-                    pjnz_stem=pjnz,
-                    indicator=defn.extract_name,
-                    configuration=defn.extract_configuration,
-                )
-                if not ext_series.empty:
-                    s = ext_series[(ext_series.index >= year_start) & (ext_series.index <= year_end)]
-                    if not s.empty:
-                        fig.add_trace(
-                            go.Scatter(
-                                x=s.index.tolist(),
-                                y=s.values.tolist(),
-                                mode="lines",
-                                name="Spectrum",
-                                line=dict(color="#1f77b4", width=2),
-                                legendgroup="Spectrum",
-                                showlegend=(idx == 0),
-                            ),
-                            row=row,
-                            col=col,
-                        )
+        def _add_trace(fig, x, y, trace_name, demo, dash, row, col):
+            show_leg = trace_name not in legend_shown
+            if show_leg:
+                legend_shown.add(trace_name)
+            fig.add_trace(
+                go.Scatter(
+                    x=x,
+                    y=y,
+                    mode="lines",
+                    name=trace_name,
+                    line=dict(
+                        color=_color_for(demo),
+                        width=1.5 if disagg_age else 2,
+                        dash=dash,
+                    ),
+                    legendgroup=trace_name,
+                    showlegend=show_leg,
+                ),
+                row=row,
+                col=col,
+            )
 
-            # --- Goals series ---
-            if pjnz in cache:
-                goals_output, goals_years = cache[pjnz]
+        def _get_spec_series(
+            ind_def, *, age: bool = disagg_age, sex: bool = disagg_sex
+        ) -> list[tuple[str, np.ndarray]]:
+            if ind_def.compute_spectrum_disagg is not None:
                 try:
-                    values = compute_goals_series(indicator, goals_output)
-                    mask = (goals_years >= year_start) & (goals_years <= year_end)
-                    x_years = goals_years[mask].tolist()
-                    y_values = values[mask].tolist()
-                    if x_years:
-                        fig.add_trace(
-                            go.Scatter(
-                                x=x_years,
-                                y=y_values,
-                                mode="lines",
-                                name="Leapfrog",
-                                line=dict(color="#ff7f0e", width=2, dash="dash"),
-                                legendgroup="Leapfrog",
-                                showlegend=(idx == 0),
-                            ),
-                            row=row,
-                            col=col,
+                    return ind_def.compute_spectrum_disagg(modvars, age, sex)
+                except Exception as exc:
+                    print(f"[app] Spectrum disagg failed: {exc}")
+                    return []
+            if ind_def.compute_spectrum is not None:
+                try:
+                    return [("Total", ind_def.compute_spectrum(modvars))]
+                except Exception as exc:
+                    print(f"[app] Spectrum compute failed: {exc}")
+                    return []
+            return []
+
+        _age_label_set = set(AGE_LABELS)
+
+        def _has_age_labels(series: list[tuple[str, np.ndarray]]) -> bool:
+            """True if any series label carries an age-group prefix — i.e. Spectrum supports age disagg."""
+            for label, _ in series:
+                part = label.split(" / ")[0] if " / " in label else label
+                if part in _age_label_set:
+                    return True
+            return False
+
+        def _align_spec(spec_values: np.ndarray):
+            year_idx = years_arr - first_year
+            valid = (year_idx >= 0) & (year_idx < len(spec_values))
+            combined = mask & valid
+            return years_arr[combined].tolist(), spec_values[year_idx[combined].astype(int)].tolist()
+
+        # ---------------------------------------------------------------
+        # Age-faceted layout: rows = indicators, cols = age groups
+        # ---------------------------------------------------------------
+        if disagg_age:
+            ncols = _N_AGE_GROUPS
+            fig_width = max(1600, ncols * 110)
+            fig_height = max(300, n_inds * 220)
+
+            fig = make_subplots(
+                rows=n_inds,
+                cols=ncols,
+                row_titles=list(selected_indicators),
+                column_titles=AGE_LABELS,
+                shared_xaxes="columns",
+                shared_yaxes=False,
+                vertical_spacing=max(0.015, 0.25 / max(n_inds, 1)),
+                horizontal_spacing=0.01,
+            )
+
+            for ind_idx, indicator in enumerate(selected_indicators):
+                row = ind_idx + 1
+                ind_def = INDICATOR_MAP[indicator]
+                all_series = ind_def.compute_goals_disagg(goals_output, True, disagg_sex)
+
+                # Spectrum — only show per-age if this indicator's modvar has an age axis
+                spec_all = _get_spec_series(ind_def, age=True, sex=disagg_sex)
+                spec_has_ages = _has_age_labels(spec_all)
+
+                for age_idx, age_label in enumerate(AGE_LABELS):
+                    col = age_idx + 1
+                    for demo, values in _series_for_age_cell(all_series, age_label):
+                        _add_trace(
+                            fig, x_years, values[mask].tolist(),
+                            _leapfrog_label(demo), demo, None,
+                            row, col,
                         )
-                except Exception as exc:  # noqa: BLE001
-                    print(f"[app] Could not compute {indicator} for {pjnz}: {exc}")
+                    if spec_has_ages:
+                        for demo, spec_values in _series_for_age_cell(spec_all, age_label):
+                            spec_x, spec_y = _align_spec(spec_values)
+                            if spec_x:
+                                _add_trace(
+                                    fig, spec_x, spec_y,
+                                    _spectrum_label(demo), demo, "dash",
+                                    row, col,
+                                )
 
-        fig.update_layout(
-            height=max(400, 320 * nrows),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-            title_text=f"Comparison — {pjnz}",
-            margin=dict(t=80, b=40, l=60, r=20),
-            plot_bgcolor="white",
-            paper_bgcolor="white",
-        )
-        fig.update_xaxes(
-            showgrid=True,
-            gridcolor="#e5e5e5",
-            range=[year_start - 1, year_end + 1],
-            tickformat="d",
-        )
-        fig.update_yaxes(showgrid=True, gridcolor="#e5e5e5", rangemode="tozero")
+            fig.update_xaxes(showticklabels=False, showgrid=True, gridcolor="#e5e5e5")
+            fig.update_yaxes(
+                showgrid=True, gridcolor="#e5e5e5", rangemode="tozero",
+                tickfont=dict(size=8),
+            )
+            for col in range(1, ncols + 1):
+                fig.update_xaxes(
+                    showticklabels=True, tickformat="d", tickangle=90,
+                    tickfont=dict(size=8), row=n_inds, col=col,
+                )
 
-        html = fig.to_html(full_html=False, include_plotlyjs=False, config={"responsive": True})
+            fig.update_layout(
+                width=fig_width,
+                height=fig_height,
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                title_text=f"Comparison — {input.pjnz()}",
+                margin=dict(t=80, b=60, l=60, r=120),
+                plot_bgcolor="white",
+                paper_bgcolor="white",
+            )
+            html = fig.to_html(
+                full_html=False, include_plotlyjs=False, config={"responsive": False}
+            )
+
+        # ---------------------------------------------------------------
+        # Simple layout: one column, rows = indicators
+        # ---------------------------------------------------------------
+        else:
+            fig_height = max(400, n_inds * 300)
+
+            fig = make_subplots(
+                rows=n_inds,
+                cols=1,
+                subplot_titles=list(selected_indicators),
+                shared_xaxes=False,
+                vertical_spacing=max(0.04, 0.3 / max(n_inds, 1)),
+            )
+
+            for ind_idx, indicator in enumerate(selected_indicators):
+                row = ind_idx + 1
+                ind_def = INDICATOR_MAP[indicator]
+
+                # Leapfrog (solid lines)
+                for demo, values in ind_def.compute_goals_disagg(goals_output, False, disagg_sex):
+                    _add_trace(
+                        fig, x_years, values[mask].tolist(),
+                        _leapfrog_label(demo), demo, None,
+                        row, 1,
+                    )
+
+                # Spectrum (dashed lines, same color as matching Leapfrog series)
+                for demo, spec_values in _get_spec_series(ind_def):
+                    spec_x, spec_y = _align_spec(spec_values)
+                    if spec_x:
+                        _add_trace(
+                            fig, spec_x, spec_y,
+                            _spectrum_label(demo), demo, "dash",
+                            row, 1,
+                        )
+
+            fig.update_xaxes(
+                showgrid=True,
+                gridcolor="#e5e5e5",
+                range=[year_start - 1, year_end + 1],
+                tickformat="d",
+                tickangle=45,
+            )
+            fig.update_yaxes(showgrid=True, gridcolor="#e5e5e5", rangemode="tozero")
+
+            fig.update_layout(
+                height=fig_height,
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                title_text=f"Comparison — {input.pjnz()}",
+                margin=dict(t=80, b=40, l=60, r=20),
+                plot_bgcolor="white",
+                paper_bgcolor="white",
+            )
+            html = fig.to_html(
+                full_html=False, include_plotlyjs=False, config={"responsive": True}
+            )
+
         return ui.HTML(html)
 
 

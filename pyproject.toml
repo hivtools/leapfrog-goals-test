@@ -10,11 +10,16 @@ dependencies = [
     "numpy>=1.24",
     "shiny>=1.2",
     "plotly>=5.0",
-    "leapfrog-goals",
+    "avenir-spectrum-common>=0.1.3",
+    "avenir-spectrum-import-pjnz>=0.1.3",
+    "leapfrog-goals>=0.0.4",
 ]
 
+# Uncomment and set the path to use local version of leapfrog-goals when developing
 [tool.uv.sources]
-leapfrog-goals = { path = "../leapfrog/goals" }
+leapfrog-goals = { path = "../leapfrog/goals", editable = true }
+avenir-spectrum-common = { path = "../SpectrumEngine/SpectrumCommon", editable = true }
+avenir-spectrum-import-pjnz = { path = "../SpectrumEngine/Tools/ImportPJNZ", editable = true }
 
 [build-system]
 requires = ["uv_build>=0.11.1,<0.12"]
