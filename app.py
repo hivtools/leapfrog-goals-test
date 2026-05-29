@@ -34,7 +34,7 @@ _N_AGE_GROUPS = len(AGE_LABELS)
 
 _pjnz_files: dict[str, Path] = {
     p.stem: p
-    for p in sorted(config.PJNZ_DIR.glob("*.PJNZ"))
+    for p in sorted(config.PJNZ_DIR.expanduser().glob("*.PJNZ"))
 }
 _pjnz_stems = list(_pjnz_files.keys())
 
@@ -155,7 +155,7 @@ def server(input, output, session):
     def comparison_plot():
         result = _run_pjnz()
         if result is None:
-            msg = "No PJNZ files found." if not _pjnz_stems else "Loading..."
+            msg = "No PJNZ files found, check 'PJNZ_DIR' in 'config.py'." if not _pjnz_stems else "Loading..."
             return ui.p(msg)
 
         modvars, goals_output, output_years = result

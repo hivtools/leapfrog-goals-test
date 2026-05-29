@@ -1,17 +1,17 @@
 # leapfrog-compare
 
-Interactive tool for comparing Spectrum extract output with leapfrog-goals model output across a set of PJNZ files.
+Interactive dashboard for comparing Spectrum modvar output against leapfrog-goals model output across a set of PJNZ files.
 
 ---
 
 ## Overview
 
-The workflow has three steps:
+The app loads each PJNZ file directly, runs the leapfrog Goals model, and plots both the Goals output and the corresponding Spectrum modvar time series side by side.
 
 ```
-1. run_extract.py       – runs Spectrum /ExtractBatch on your PJNZ folder → XLSX
-2. run_goals_model.py   – runs leapfrog goals on each PJNZ → .npz per file
-3. app.py               – launches an interactive Shiny dashboard to compare them
+1. Drop .PJNZ files into PJNZ_DIR
+2. Edit config.py to point at that directory
+3. uv run shiny run app.py
 ```
 
 ---
@@ -22,16 +22,12 @@ The workflow has three steps:
 
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/) if you haven't already.
 
-### 2. Spectrum desktop application (for step 1 only)
-
-Spectrum must be installed and its executable must be on your `PATH`.
-
-### 3. leapfrog-goals Python package (for step 2 and the dashboard)
+### 2. leapfrog-goals Python package
 
 The `leapfrog-goals` package contains compiled C++ extensions and must be installed separately.
 
 ```bash
-# From this project directory, point uv at your local clone of leapfrog/goals e.g.:
+# Point uv at your local clone of leapfrog/goals, e.g.:
 uv pip install ../leapfrog/goals
 
 # Or using a full path:
@@ -50,58 +46,15 @@ uv pip install /path/to/leapfrog/goals
 uv sync
 ```
 
-### 2. Edit `config.py`
+### 2. Edit `src/leapfrog_compare/config.py`
 
-Open `config.py` and adjust the paths for your machine:
-
-| Variable | Description |
-|---|---|
-| `PJNZ_DIR` | Folder containing your `.PJNZ` files |
-| `EXTRACT_CONFIG` | Path to the `.EX` extract configuration file |
-| `EXTRACT_OUTPUT_DIR` | Where Spectrum extract output will be written |
-| `GOALS_OUTPUT_DIR` | Where goals model output will be written |
-| `SPECTRUM_EXE` | (Optional) Full path to Spectrum if not on `PATH` |
-
-A minimal example:
+Set `PJNZ_DIR` to the folder containing your `.PJNZ` files:
 
 ```python
-PJNZ_DIR           = Path("/home/user/data/pjnz_files")
-EXTRACT_CONFIG     = Path("goals_extract_config.EX")
+PJNZ_DIR = Path("/home/user/data/pjnz_files")
 ```
 
-### 3. Create the output directories (optional — created automatically)
-
-```bash
-mkdir -p output/extract output/goals
-```
-
----
-
-## Usage
-
-### Step 1 — Run Spectrum extract
-
-```bash
-uv run scripts/run_extract.py
-```
-
-This calls `spectrum /ExtractBatch` on every `.PJNZ` in `PJNZ_DIR` using the `.EX` config file and writes the output XLSX to `EXTRACT_OUTPUT_DIR`.
-
-### Step 2 — Run leapfrog goals model
-
-```bash
-uv run scripts/run_goals_model.py
-```
-
-For each `.PJNZ` file this:
-1. Reads the PJNZ using the Python PJNZ reader from `leapfrog/goals/src/_spectrum`
-2. Converts parameters using `leapfrog_mapping.modvars_to_leapfrog`
-3. Runs `leapfrog_goals.run_goals`
-4. Saves the result to `output/goals/<pjnz_stem>.npz`
-
-If a file fails, the error is printed and processing continues.
-
-### Step 3 — Launch the dashboard
+### 3. Launch the dashboard
 
 ```bash
 uv run shiny run app.py
@@ -109,10 +62,15 @@ uv run shiny run app.py
 
 Open [http://127.0.0.1:8000](http://127.0.0.1:8000) in your browser.
 
-The dashboard will show:
-- A **PJNZ dropdown** — select which projection to compare
-- An **Indicators multi-select** — choose one or more indicators; the plot facets by indicator
-- Each facet shows the **Spectrum (extract)** line and the **Leapfrog (goals)** line on the same axis
+---
+
+## Dashboard controls
+
+- **PJNZ** — select which projection to compare
+- **Indicators** — choose one or more indicators; the plot facets by indicator
+- **Year range** — slider set automatically from the PJNZ projection years
+- **Disaggregation** — optionally break down by five-year age group and/or sex
+- Each facet shows a **Leapfrog** (solid) line and a **Spectrum** (dashed) line in the same colour
 
 ---
 
@@ -121,55 +79,161 @@ The dashboard will show:
 ```
 leapfrog-compare/
 ├── app.py                        # Shiny for Python dashboard
-├── config.py                     # User configuration (paths, etc.)
 ├── pyproject.toml                # uv/pip project metadata
-├── goals_extract_config.EX       # Spectrum extract config
-├── scripts/
-│   ├── run_extract.py            # Step 1: run Spectrum extract
-│   └── run_goals_model.py        # Step 2: run leapfrog goals model
 └── src/
     └── leapfrog_compare/
-        ├── spectrum.py           # Spectrum CLI wrapper
-        ├── pjnz_runner.py        # PJNZ loading + goals execution
-        ├── extract_reader.py     # XLSX extract parser
-        └── indicator_map.py      # Extract ↔ goals indicator mapping
+        ├── config.py             # User configuration (PJNZ_DIR)
+        ├── pjnz_runner.py        # PJNZ loading + Goals model execution
+        └── indicator_map.py      # Goals output ↔ Spectrum modvar mapping
 ```
+
+---
+
+## Indicator reference
+
+For each indicator: the leapfrog Goals output array used, its dimensions, the Spectrum modvar tag, and the modvar dimensions.
+
+> **Leapfrog array dimensions** — most population-like outputs share the shape `(81, 2, n_years)`:
+> - axis 0 = single-year ages 0–80
+> - axis 1 = sex (0 = male, 1 = female)
+> - axis 2 = projection years
+
+---
+
+### Total population
+
+| | Detail |
+|---|---|
+| **Leapfrog output** | `p_totpop` |
+| **Leapfrog shape** | `(81, 2, n_years)` — ages × sex × years |
+| **Leapfrog aggregation** | Sum over all ages and both sexes |
+| **Spectrum modvar** | `DP_BigPop_V1` |
+| **Spectrum PJNZ tag** | `<BigPop MV3>` |
+| **Spectrum shape** | `(3, 81, 81)` — sex × age × year; index 0 = both, 1 = male, 2 = female |
+| **Spectrum aggregation** | Rows 1 (male) + 2 (female) summed over all 81 age columns |
+
+---
+
+### Total Births - todo
+
+| | Detail |
+|---|---|
+| **Leapfrog output** | `births` |
+| **Leapfrog shape** | `(n_years,)` — total births per year |
+| **Leapfrog aggregation** | Used directly (no aggregation) |
+| **Spectrum modvar** | None - births is not read in yet |
+
+---
+
+### HIV population
+
+| | Detail |
+|---|---|
+| **Leapfrog output** | `p_hivpop` |
+| **Leapfrog shape** | `(81, 2, n_years)` — ages × sex × years |
+| **Leapfrog aggregation** | Sum over all ages and both sexes |
+| **Spectrum modvar** | `HV_TotalAdultsHIV_V1`|
+| **Spectrum PJNZ tag** | `<TotalAdultsHIV MV>` |
+| **Spectrum shape** | `(3, 81)` — sex × year; index 0 = both, 1 = male, 2 = female |
+| **Spectrum aggregation** | Rows 1 (male) + 2 (female); no age aggregation (shape is sex × year, already age-aggregated) |
+
+---
+
+### New HIV infections
+
+| | Detail |
+|---|---|
+| **Leapfrog output** | `p_infections` |
+| **Leapfrog shape** | `(81, 2, n_years)` — ages × sex × years |
+| **Leapfrog aggregation** | Sum over all ages and both sexes |
+| **Spectrum modvar** | `HV_NewInfections_V1` |
+| **Spectrum PJNZ tag** | `<NewInfections MV>` |
+| **Spectrum shape** | `(3, 11, 5, 81)` — sex × risk group × vaccine state × year; index 0 = both, 1 = male, 2 = female |
+| **Spectrum aggregation** | Rows 1 (male) + 2 (female) summed over all risk-group and vaccine-state dimensions |
+
+Sex disaggregation sums the male (row 1) and female (row 2) sub-arrays over risk group and vaccine state. Age disaggregation is not available for this modvar.
+
+---
+
+### AIDS deaths
+
+| | Detail |
+|---|---|
+| **Leapfrog output** | `p_hiv_deaths` |
+| **Leapfrog shape** | `(81, 2, n_years)` — ages × sex × years |
+| **Leapfrog aggregation** | Sum over all ages and both sexes |
+| **Spectrum modvar** | `HV_AIDSDeaths_V1` |
+| **Spectrum PJNZ tag** | `<AIDSDeaths MV>` |
+| **Spectrum shape** | `(3, 11, 5, 81)` — sex × risk group × vaccine state × year; index 0 = both, 1 = male, 2 = female |
+| **Spectrum aggregation** | Rows 1 (male) + 2 (female) summed over all risk-group and vaccine-state dimensions |
+
+Same sex-disaggregation behaviour as New HIV infections. No per-age-group Spectrum line.
+
+---
+
+### Total number receiving ART (15-49)
+
+| | Detail |
+|---|---|
+| **Leapfrog output** | `h_artpop` |
+| **Leapfrog shape** | `(3, 7, 66, 2, n_years)` — ART duration stage × CD4 stage × single ages 15–49 × sex × years |
+| **Leapfrog aggregation** | Sum over all ART duration stages, CD4 stages, ages, and both sexes |
+| **Spectrum modvar** | `HV_TotalAdultsART_V1` |
+| **Spectrum PJNZ tag** | `<TotalAdultsART MV>` |
+| **Spectrum shape** | `(3, 81)` — sex × year; index 0 = both, 1 = male, 2 = female |
+| **Spectrum aggregation** | Rows 1 (male) + 2 (female); no age aggregation (shape is sex × year, already age-aggregated) |
+
+ART duration stages: 0 = <6 months, 1 = 6–12 months, 2 = >12 months.
+Age disaggregation on the Goals side sums `h_artpop` over the appropriate single-year age slice; under-15 groups return zero (no adult ART data below age 15). Age disaggregation is not available for the Spectrum modvar.
+
+---
+
+### Prevalence (15–49)
+
+| | Detail |
+|---|---|
+| **Leapfrog outputs** | `p_hivpop`, `p_totpop` |
+| **Leapfrog shape** | Both `(81, 2, n_years)`; sliced to ages 15–49 before computing |
+| **Leapfrog computation** | `100 × sum(p_hivpop[15:50]) / sum(p_totpop[15:50])` |
+| **Spectrum modvar** | None — `HV_CalcPrevalence_V1` is all zeros in the current test files |
+| **Spectrum PJNZ tag** | `<CalcPrevalence MV>` |
+| **Spectrum shape** | `(3, 11, 81)` — sex × risk group × year; index 0 = both, 1 = male, 2 = female |
+| **Spectrum aggregation** | Rows 1 (male) + 2 (female) summed over all 11 risk-group columns |
+
+---
+
+### Incidence (15–49) (Percent)
+
+| | Detail |
+|---|---|
+| **Leapfrog outputs** | `p_infections`, `p_hivpop`, `p_totpop` |
+| **Leapfrog shape** | All `(81, 2, n_years)`; sliced to ages 15–49 |
+| **Leapfrog computation** | `100 × sum(p_infections[15:50]) / (sum(p_totpop[15:50]) − sum(p_hivpop[15:50]))` |
+| **Spectrum modvar** | `HV_Incidence_V1` |
+| **Spectrum PJNZ tag** | `<Incidence MV>` |
+| **Spectrum shape** | `(81,)` — one rate per projection year |
+| **Spectrum aggregation** | Multiplied by 100 to convert to percent; no sex or age disaggregation available |
 
 ---
 
 ## Adding new indicators
 
-Edit `src/leapfrog_compare/indicator_map.py`.
+Edit [src/leapfrog_compare/indicator_map.py](src/leapfrog_compare/indicator_map.py).
 
-1. Write a `compute` function `(output: dict[str, np.ndarray]) -> np.ndarray` that returns a 1-D array per output year.
-2. Add an `IndicatorDef` to `INDICATOR_MAP` at the end of the `OrderedDict`.
-
-Helper factories are available:
-- `_sum(key)` — sum over all non-time dimensions of a goals array
-- `_direct(key, scale)` — use a 1-D goals array directly (with optional scaling)
-- `_age_slice_sum(key, age_start, age_end)` — sum over a slice of single-year age groups
-
-Example — adding "Total non-AIDS deaths to HIV population":
-
-```python
-("Total non-AIDS deaths to HIV population", IndicatorDef(
-    extract_name="Total non-AIDS deaths to HIV population",
-    compute=_sum("p_deaths_background_hivpop"),
-)),
-```
+1. Write a `compute_goals` function `(output: dict) -> np.ndarray` returning a 1-D array over years.
+2. Write a `compute_goals_disagg` function for age/sex breakdown, or use `_disagg_std(key)` for standard `(81, 2, n_years)` arrays.
+3. Optionally write `compute_spectrum` and `compute_spectrum_disagg` functions if a matching modvar exists.
+4. Add an `IndicatorDef` entry to `INDICATOR_MAP`.
 
 ---
 
 ## Troubleshooting
 
 **`leapfrog_goals` not found**
-Re-run `uv pip install /path/to/leapfrog/goals`. Check that a compiled `.pyd` (Windows) or `.so` (Linux/Mac) file is present in the installed package.
+Re-run `uv pip install /path/to/leapfrog/goals`. Check that a compiled `.so` (Linux/Mac) or `.pyd` (Windows) file is present in the installed package.
 
-**`spectrum not found in PATH`**
-Either add the Spectrum installation directory to `PATH`, or set `SPECTRUM_EXE = Path("C:/...")` in `config.py`.
+**Dashboard shows "No PJNZ files found"**
+Check that `PJNZ_DIR` in `config.py` points to a directory containing `.PJNZ` files (case-sensitive extension).
 
-**Dashboard shows "Extract: not loaded"**
-Check that `EXTRACT_OUTPUT_DIR` contains an `.xlsx` file and that it was written without errors by `run_extract.py`.
-
-**Goals output not appearing**
-Check that `GOALS_OUTPUT_DIR` contains `.npz` files matching the PJNZ stems. Run `scripts/run_goals_model.py` again and look for errors.
+**A country's data looks truncated or goes NaN**
+The Goals model may produce NaN values for some countries if a parameter causes a numerical instability. Check the terminal output for errors when the PJNZ is loaded.

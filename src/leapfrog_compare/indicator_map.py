@@ -19,11 +19,16 @@ h_artpop shape is (4, 7, 66, 2, n_years):
   axis 3 = sex (0=male, 1=female)
 
 Spectrum modvars shapes (confirmed):
-  DP_BigPop_V1          (3, 81, 81)  sex × age × year;  [0]=total, [1]=male, [2]=female
-  HV_NewInfections_V1   (3, K, M, 81) sex × age_grp × risk_grp × year; [0]=male, [1]=female, [2]=total
-  HV_AIDSDeaths_V1      same structure as HV_NewInfections_V1
-  HV_TotalAdultsART_V1  (3, 81)     sex × year;  [0]=male, [1]=female, [2]=total
-  HV_Incidence_V1       (81,)        rate per year (×100 → percent) — no disaggregation
+  DP_BigPop_V1              (3, 81, 81)    sex × age × year;  [0]=both, [1]=male, [2]=female
+  HV_NewInfections_V1       (3, K, M, 81)  sex × risk_grp × vaccine_state × year; [0]=both, [1]=male, [2]=female
+  HV_AIDSDeaths_V1          same structure as HV_NewInfections_V1
+  HV_TotalAdultsHIV_V1      (3, 81)        sex × year;  [0]=both, [1]=male, [2]=female
+  HV_TotalAdultsART_V1      (3, 81)        sex × year;  [0]=both, [1]=male, [2]=female
+  HV_CalcPrevalence_V1      (3, 11, 81)    sex × risk_grp × year; [0]=both, [1]=male, [2]=female
+  HV_Incidence_V1           (81,)          rate per year (×100 → percent) — no disaggregation
+
+For all modvars with a sex first-dimension, index 0 ("both") is a pre-computed total that we
+do NOT use. Totals are always produced by manually summing indices 1 (male) + 2 (female).
 """
 
 from __future__ import annotations
@@ -38,9 +43,11 @@ import numpy as np
 from SpectrumCommon.Const.DP.DPTags import DP_BigPopTag  # type: ignore[import-untyped]
 from SpectrumCommon.Const.HV.HVTags import (  # type: ignore[import-untyped]
     HV_AIDSDeathsTag,
+    HV_CalcPrevalenceTag,
     HV_IncidenceTag,
     HV_NewInfectionsTag,
     HV_TotalAdultsARTTag,
+    HV_TotalAdultsHIVTag,
 )
 
 
@@ -207,27 +214,41 @@ def _disagg_incidence() -> Callable:
 # ---------------------------------------------------------------------------
 
 def _spec_totpop(modvars: dict) -> np.ndarray:
-    """DP_BigPop_V1[0] = total-sex slice (81 ages × 81 years). Sum over ages."""
+    """DP_BigPop_V1: sum male (row 1) + female (row 2) over all 81 ages."""
     arr = np.array(modvars[DP_BigPopTag])  # (3, 81, 81)  [sex, age, year]
-    return arr[0].sum(axis=0)
+    return (arr[1] + arr[2]).sum(axis=0)
 
 
 def _spec_newinf(modvars: dict) -> np.ndarray:
-    """HV_NewInfections_V1[2] = total (first dim: 0=male,1=female,2=total)."""
-    arr = np.array(modvars[HV_NewInfectionsTag])  # (3, age_grp, risk_grp, 81)
-    return arr[2].reshape(-1, arr.shape[-1]).sum(axis=0)
+    """HV_NewInfections_V1: sum male (row 1) + female (row 2) over inner dims."""
+    arr = np.array(modvars[HV_NewInfectionsTag])  # (3, risk_grp, vaccine_state, 81)
+    n = arr.shape[-1]
+    return (arr[1] + arr[2]).reshape(-1, n).sum(axis=0)
 
 
 def _spec_aidsdeath(modvars: dict) -> np.ndarray:
-    """HV_AIDSDeaths_V1[2] = total (same sex-first structure as new infections)."""
+    """HV_AIDSDeaths_V1: sum male (row 1) + female (row 2) over inner dims."""
     arr = np.array(modvars[HV_AIDSDeathsTag])
-    return arr[2].reshape(-1, arr.shape[-1]).sum(axis=0)
+    n = arr.shape[-1]
+    return (arr[1] + arr[2]).reshape(-1, n).sum(axis=0)
+
+
+def _spec_hivpop(modvars: dict) -> np.ndarray:
+    """HV_TotalAdultsHIV_V1: sum male (row 1) + female (row 2)."""
+    arr = np.array(modvars[HV_TotalAdultsHIVTag])  # (3, 81)  sex × year
+    return arr[1] + arr[2]
 
 
 def _spec_art(modvars: dict) -> np.ndarray:
-    """HV_TotalAdultsART_V1[2] = total-both-sexes ART adults."""
-    arr = np.array(modvars[HV_TotalAdultsARTTag])  # (3, 81)  [0]=male,[1]=female,[2]=total
-    return arr[2]
+    """HV_TotalAdultsART_V1: sum male (row 1) + female (row 2)."""
+    arr = np.array(modvars[HV_TotalAdultsARTTag])  # (3, 81)  sex × year
+    return arr[1] + arr[2]
+
+
+def _spec_prevalence(modvars: dict) -> np.ndarray:
+    """HV_CalcPrevalence_V1: sum male (row 1) + female (row 2) over all risk groups."""
+    arr = np.array(modvars[HV_CalcPrevalenceTag])  # (3, 11, 81)  sex × risk_grp × year
+    return (arr[1] + arr[2]).sum(axis=0)
 
 
 def _spec_incidence(modvars: dict) -> np.ndarray:
@@ -240,14 +261,9 @@ def _spec_incidence(modvars: dict) -> np.ndarray:
 # ---------------------------------------------------------------------------
 
 def _spec_totpop_disagg(modvars: dict, disagg_age: bool, disagg_sex: bool) -> list[tuple[str, np.ndarray]]:
-    """DP_BigPop_V1 (3, 81, 81): [sex, age, year] — [0]=total, [1]=male, [2]=female.
-    Supports both age and sex disaggregation."""
+    """DP_BigPop_V1 (3, 81, 81): [sex, age, year] — [0]=both, [1]=male, [2]=female.
+    Totals are always male+female (index 1+2), never the pre-computed 'both' row."""
     arr = np.array(modvars[DP_BigPopTag])  # (3, 81_ages, 81_years)
-
-    if disagg_sex:
-        sex_items = [("Male", 1), ("Female", 2)]
-    else:
-        sex_items = [(None, 0)]  # index 0 = pre-computed total
 
     if disagg_age:
         age_items = [(lbl, slice(a, b + 1)) for (a, b), lbl in zip(AGE_GROUPS, AGE_LABELS)]
@@ -256,25 +272,28 @@ def _spec_totpop_disagg(modvars: dict, disagg_age: bool, disagg_sex: bool) -> li
 
     series: list[tuple[str, np.ndarray]] = []
     for age_lbl, age_sl in age_items:
-        for sex_lbl, sex_idx in sex_items:
-            data = arr[sex_idx, age_sl, :].sum(axis=0)
-            parts = [p for p in [age_lbl, sex_lbl] if p]
-            label = " / ".join(parts) if parts else "Total"
-            series.append((label, data))
+        if disagg_sex:
+            for sex_lbl, sex_idx in [("Male", 1), ("Female", 2)]:
+                data = arr[sex_idx, age_sl, :].sum(axis=0)
+                parts = [p for p in [age_lbl, sex_lbl] if p]
+                series.append((" / ".join(parts) if parts else sex_lbl, data))
+        else:
+            data = (arr[1] + arr[2])[age_sl, :].sum(axis=0)
+            series.append((age_lbl if age_lbl else "Total", data))
     return series
 
 
 def _spec_newinf_disagg(modvars: dict, _disagg_age: bool, disagg_sex: bool) -> list[tuple[str, np.ndarray]]:
-    """HV_NewInfections_V1 (3, …, 81): first dim is sex [0]=male,[1]=female,[2]=total.
-    Inner dims are age groups × risk groups — summed here (no age disagg in this modvar)."""
+    """HV_NewInfections_V1 (3, …, 81): sex [0]=both, [1]=male, [2]=female.
+    Inner dims (risk group, vaccine state) are always summed; no age disagg available."""
     arr = np.array(modvars[HV_NewInfectionsTag])
     n = arr.shape[-1]
     if disagg_sex:
         return [
-            ("Male", arr[0].reshape(-1, n).sum(axis=0)),
-            ("Female", arr[1].reshape(-1, n).sum(axis=0)),
+            ("Male", arr[1].reshape(-1, n).sum(axis=0)),
+            ("Female", arr[2].reshape(-1, n).sum(axis=0)),
         ]
-    return [("Total", arr[2].reshape(-1, n).sum(axis=0))]
+    return [("Total", (arr[1] + arr[2]).reshape(-1, n).sum(axis=0))]
 
 
 def _spec_aidsdeath_disagg(modvars: dict, _disagg_age: bool, disagg_sex: bool) -> list[tuple[str, np.ndarray]]:
@@ -283,18 +302,26 @@ def _spec_aidsdeath_disagg(modvars: dict, _disagg_age: bool, disagg_sex: bool) -
     n = arr.shape[-1]
     if disagg_sex:
         return [
-            ("Male", arr[0].reshape(-1, n).sum(axis=0)),
-            ("Female", arr[1].reshape(-1, n).sum(axis=0)),
+            ("Male", arr[1].reshape(-1, n).sum(axis=0)),
+            ("Female", arr[2].reshape(-1, n).sum(axis=0)),
         ]
-    return [("Total", arr[2].reshape(-1, n).sum(axis=0))]
+    return [("Total", (arr[1] + arr[2]).reshape(-1, n).sum(axis=0))]
+
+
+def _spec_hivpop_disagg(modvars: dict, _disagg_age: bool, disagg_sex: bool) -> list[tuple[str, np.ndarray]]:
+    """HV_TotalAdultsHIV_V1 (3, 81): sex [0]=both, [1]=male, [2]=female. No age disagg."""
+    arr = np.array(modvars[HV_TotalAdultsHIVTag])
+    if disagg_sex:
+        return [("Male", arr[1]), ("Female", arr[2])]
+    return [("Total", arr[1] + arr[2])]
 
 
 def _spec_art_disagg(modvars: dict, _disagg_age: bool, disagg_sex: bool) -> list[tuple[str, np.ndarray]]:
-    """HV_TotalAdultsART_V1 (3, 81): [0]=male, [1]=female, [2]=total. Age already summed."""
+    """HV_TotalAdultsART_V1 (3, 81): sex [0]=both, [1]=male, [2]=female. No age disagg."""
     arr = np.array(modvars[HV_TotalAdultsARTTag])
     if disagg_sex:
-        return [("Male", arr[0]), ("Female", arr[1])]
-    return [("Total", arr[2])]
+        return [("Male", arr[1]), ("Female", arr[2])]
+    return [("Total", arr[1] + arr[2])]
 
 
 # ---------------------------------------------------------------------------
@@ -324,7 +351,8 @@ INDICATOR_MAP: OrderedDict[str, IndicatorDef] = OrderedDict([
     ("HIV population", IndicatorDef(
         compute_goals=lambda o: _sum_std(o["p_hivpop"]),
         compute_goals_disagg=_disagg_std("p_hivpop"),
-        compute_spectrum=None,  # HV_TotalAdultsHIV all-zeros in test files
+        compute_spectrum=_spec_hivpop,
+        compute_spectrum_disagg=_spec_hivpop_disagg,
     )),
     ("New HIV infections", IndicatorDef(
         compute_goals=lambda o: _sum_std(o["p_infections"]),
@@ -338,8 +366,8 @@ INDICATOR_MAP: OrderedDict[str, IndicatorDef] = OrderedDict([
         compute_spectrum=_spec_aidsdeath,
         compute_spectrum_disagg=_spec_aidsdeath_disagg,
     )),
-    ("Total number receiving ART (15+)", IndicatorDef(
-        compute_goals=lambda o: o["h_artpop"].reshape(-1, o["h_artpop"].shape[-1]).sum(axis=0),
+    ("Total number receiving ART (15-49)", IndicatorDef(
+        compute_goals=lambda o: o["h_artpop"][:, :, :35, :, :].reshape(-1, o["h_artpop"].shape[-1]).sum(axis=0),
         compute_goals_disagg=_disagg_art(),
         compute_spectrum=_spec_art,
         compute_spectrum_disagg=_spec_art_disagg,
@@ -350,7 +378,7 @@ INDICATOR_MAP: OrderedDict[str, IndicatorDef] = OrderedDict([
             _sum_std(o["p_totpop"], slice(15, 50))
         ),
         compute_goals_disagg=_disagg_prevalence(),
-        compute_spectrum=None,  # HV_Prevalence all-zeros in test files
+        compute_spectrum=_spec_prevalence,
     )),
     ("Incidence (15-49) (Percent)", IndicatorDef(
         compute_goals=lambda o: 100.0 * _sum_std(o["p_infections"], slice(15, 50)) / np.where(
