@@ -2,8 +2,8 @@
 Indicator definitions: compute time series from Goals output and Spectrum modvars.
 
 Each IndicatorDef provides:
-  - compute_goals(output)            -> 1-D ndarray (total, all ages+sexes)
-  - compute_goals_disagg(output, disagg_age, disagg_sex)
+  - compute_leapfrog_aim(output)            -> 1-D ndarray (total, all ages+sexes)
+  - compute_leapfrog_aim_disagg(output, disagg_age, disagg_sex)
                                      -> list[(label, 1-D ndarray)]
   - compute_spectrum(modvars)        -> 1-D ndarray  |  None if unavailable
   - compute_spectrum_disagg(modvars, disagg_age, disagg_sex)
@@ -453,8 +453,8 @@ def _goals_prevalence(goals_output: dict, disagg_sex: bool) -> list[tuple[str, n
 
 @dataclass
 class IndicatorDef:
-    compute_goals: Callable[[dict], np.ndarray]
-    compute_goals_disagg: Callable[[dict, bool, bool], list[tuple[str, np.ndarray]]]
+    compute_leapfrog_aim: Callable[[dict], np.ndarray]
+    compute_leapfrog_aim_disagg: Callable[[dict, bool, bool], list[tuple[str, np.ndarray]]]
     compute_spectrum: Callable[[dict], np.ndarray] | None
     compute_spectrum_disagg: Callable[[dict, bool, bool], list[tuple[str, np.ndarray]]] | None = field(default=None)
     # Goals-specific outputs (hidden in age-faceted view); signature: (goals_output, disagg_sex)
@@ -464,79 +464,79 @@ class IndicatorDef:
 INDICATOR_MAP: OrderedDict[str, IndicatorDef] = OrderedDict([
     # --- All-ages indicators: Leapfrog DP/AIM vs Spectrum only ---
     ("Total population", IndicatorDef(
-        compute_goals=lambda o: _sum_std(o["p_totpop"]),
-        compute_goals_disagg=_disagg_std("p_totpop"),
+        compute_leapfrog_aim=lambda o: _sum_std(o["p_totpop"]),
+        compute_leapfrog_aim_disagg=_disagg_std("p_totpop"),
         compute_spectrum=_spec_totpop,
         compute_spectrum_disagg=_spec_totpop_disagg,
     )),
     ("Total Births", IndicatorDef(
-        compute_goals=lambda o: o["births"],
-        compute_goals_disagg=lambda o, _da, _ds: [("Total", o["births"])],
+        compute_leapfrog_aim=lambda o: o["births"],
+        compute_leapfrog_aim_disagg=lambda o, _da, _ds: [("Total", o["births"])],
         compute_spectrum=None,  # DP_Births all-zeros in test files
     )),
     ("HIV population", IndicatorDef(
-        compute_goals=lambda o: _sum_std(o["p_hivpop"]),
-        compute_goals_disagg=_disagg_std("p_hivpop"),
+        compute_leapfrog_aim=lambda o: _sum_std(o["p_hivpop"]),
+        compute_leapfrog_aim_disagg=_disagg_std("p_hivpop"),
         compute_spectrum=_spec_hivpop,
         compute_spectrum_disagg=_spec_hivpop_disagg,
     )),
     ("New HIV infections", IndicatorDef(
-        compute_goals=lambda o: _sum_std(o["p_infections"]),
-        compute_goals_disagg=_disagg_std("p_infections"),
+        compute_leapfrog_aim=lambda o: _sum_std(o["p_infections"]),
+        compute_leapfrog_aim_disagg=_disagg_std("p_infections"),
         compute_spectrum=_spec_newinf,
         compute_spectrum_disagg=_spec_newinf_disagg,
     )),
     ("AIDS deaths", IndicatorDef(
-        compute_goals=lambda o: _sum_std(o["p_hiv_deaths"]),
-        compute_goals_disagg=_disagg_std("p_hiv_deaths"),
+        compute_leapfrog_aim=lambda o: _sum_std(o["p_hiv_deaths"]),
+        compute_leapfrog_aim_disagg=_disagg_std("p_hiv_deaths"),
         compute_spectrum=_spec_aidsdeath,
         compute_spectrum_disagg=_spec_aidsdeath_disagg,
     )),
     ("Total number receiving ART (15-49)", IndicatorDef(
-        compute_goals=lambda o: o["h_artpop"][:, :, :35, :, :].reshape(-1, o["h_artpop"].shape[-1]).sum(axis=0),
-        compute_goals_disagg=_disagg_art(),
+        compute_leapfrog_aim=lambda o: o["h_artpop"][:, :, :35, :, :].reshape(-1, o["h_artpop"].shape[-1]).sum(axis=0),
+        compute_leapfrog_aim_disagg=_disagg_art(),
         compute_spectrum=_spec_art,
         compute_spectrum_disagg=_spec_art_disagg,
     )),
 
     # --- 15-49 indicators: all three sources; age disagg disabled ---
     ("Total population 15-49", IndicatorDef(
-        compute_goals=lambda o: _sum_std(o["p_totpop"], slice(15, 50)),
-        compute_goals_disagg=_disagg_std_1549("p_totpop"),
+        compute_leapfrog_aim=lambda o: _sum_std(o["p_totpop"], slice(15, 50)),
+        compute_leapfrog_aim_disagg=_disagg_std_1549("p_totpop"),
         compute_spectrum=_spec_totpop_1549,
         compute_spectrum_disagg=_spec_totpop_1549_disagg,
         compute_leapfrog_goals_disagg=_goals_total_pop_1549,
     )),
     ("New HIV infections 15-49", IndicatorDef(
-        compute_goals=lambda o: _sum_std(o["p_infections"], slice(15, 50)),
-        compute_goals_disagg=_disagg_std_1549("p_infections"),
+        compute_leapfrog_aim=lambda o: _sum_std(o["p_infections"], slice(15, 50)),
+        compute_leapfrog_aim_disagg=_disagg_std_1549("p_infections"),
         compute_spectrum=_spec_newinf,
         compute_spectrum_disagg=_spec_newinf_1549_disagg,
         compute_leapfrog_goals_disagg=_goals_newinf,
     )),
     ("AIDS deaths 15-49", IndicatorDef(
-        compute_goals=lambda o: _sum_std(o["p_hiv_deaths"], slice(15, 50)),
-        compute_goals_disagg=_disagg_std_1549("p_hiv_deaths"),
+        compute_leapfrog_aim=lambda o: _sum_std(o["p_hiv_deaths"], slice(15, 50)),
+        compute_leapfrog_aim_disagg=_disagg_std_1549("p_hiv_deaths"),
         compute_spectrum=_spec_aidsdeath,
         compute_spectrum_disagg=_spec_aidsdeath_1549_disagg,
         compute_leapfrog_goals_disagg=_goals_total_deaths_hiv,
     )),
     ("Prevalence (15-49) (%)", IndicatorDef(
-        compute_goals=lambda o: 100.0 * _sum_std(o["p_hivpop"], slice(15, 50)) / np.where(
+        compute_leapfrog_aim=lambda o: 100.0 * _sum_std(o["p_hivpop"], slice(15, 50)) / np.where(
             _sum_std(o["p_totpop"], slice(15, 50)) == 0, np.nan,
             _sum_std(o["p_totpop"], slice(15, 50))
         ),
-        compute_goals_disagg=_no_age_disagg(_disagg_prevalence()),
+        compute_leapfrog_aim_disagg=_no_age_disagg(_disagg_prevalence()),
         compute_spectrum=_spec_prevalence,
         compute_leapfrog_goals_disagg=_goals_prevalence,
     )),
     ("Incidence (15-49) (%)", IndicatorDef(
-        compute_goals=lambda o: 100.0 * _sum_std(o["p_infections"], slice(15, 50)) / np.where(
+        compute_leapfrog_aim=lambda o: 100.0 * _sum_std(o["p_infections"], slice(15, 50)) / np.where(
             (_sum_std(o["p_totpop"], slice(15, 50)) - _sum_std(o["p_hivpop"], slice(15, 50))) == 0,
             np.nan,
             _sum_std(o["p_totpop"], slice(15, 50)) - _sum_std(o["p_hivpop"], slice(15, 50)),
         ),
-        compute_goals_disagg=_no_age_disagg(_disagg_incidence()),
+        compute_leapfrog_aim_disagg=_no_age_disagg(_disagg_incidence()),
         compute_spectrum=_spec_incidence,
         compute_leapfrog_goals_disagg=_goals_incidence,
     )),

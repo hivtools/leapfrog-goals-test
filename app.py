@@ -276,7 +276,7 @@ def server(input, output, session):
             for ind_idx, indicator in enumerate(selected_indicators):
                 row = ind_idx + 1
                 ind_def = INDICATOR_MAP[indicator]
-                all_series = ind_def.compute_goals_disagg(goals_output, True, disagg_sex)
+                all_series = ind_def.compute_leapfrog_aim_disagg(goals_output, True, disagg_sex)
 
                 # Spectrum — only show per-age if this indicator's modvar has an age axis
                 spec_all = _get_spec_series(ind_def, age=True, sex=disagg_sex)
@@ -343,7 +343,7 @@ def server(input, output, session):
                 ind_def = INDICATOR_MAP[indicator]
 
                 # Leapfrog DP/AIM (solid lines)
-                for demo, values in ind_def.compute_goals_disagg(goals_output, False, disagg_sex):
+                for demo, values in ind_def.compute_leapfrog_aim_disagg(goals_output, False, disagg_sex):
                     _add_trace(
                         fig, x_years, values[mask].tolist(),
                         _dp_aim_label(demo), demo, None,
