@@ -1,6 +1,6 @@
 [project]
 name = "leapfrog-compare"
-version = "0.0.1"
+version = "0.0.2"
 description = "Compare Spectrum extract output with leapfrog-goals model output"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -10,16 +10,16 @@ dependencies = [
     "numpy>=1.24",
     "shiny>=1.2",
     "plotly>=5.0",
-    "avenir-spectrum-common>=0.1.4",
-    "avenir-spectrum-import-pjnz>=0.1.4",
-    "leapfrog-goals>=0.0.4",
+    "avenir-spectrum-common>=0.1.6",
+    "avenir-spectrum-import-pjnz>=0.1.5",
+    "leapfrog-goals>=0.0.5",
 ]
 
 # Uncomment and set the path to use local version of leapfrog-goals when developing
-[tool.uv.sources]
-leapfrog-goals = { path = "../leapfrog/goals", editable = true }
-avenir-spectrum-common = { path = "../SpectrumEngine/SpectrumCommon", editable = true }
-avenir-spectrum-import-pjnz = { path = "../SpectrumEngine/Tools/ImportPJNZ", editable = true }
+# [tool.uv.sources]
+# leapfrog-goals = { path = "../leapfrog/goals", editable = true }
+# avenir-spectrum-common = { path = "../SpectrumEngine/SpectrumCommon", editable = true }
+# avenir-spectrum-import-pjnz = { path = "../SpectrumEngine/Tools/ImportPJNZ", editable = true }
 
 [build-system]
 requires = ["uv_build>=0.11.1,<0.12"]
