@@ -308,6 +308,30 @@ def _spec_aidsdeath_disagg(modvars: dict, _disagg_age: bool, disagg_sex: bool) -
     return [("Total", (arr[1] + arr[2]).reshape(-1, n).sum(axis=0))]
 
 
+def _spec_newinf_1549_disagg(modvars: dict, _disagg_age: bool, disagg_sex: bool) -> list[tuple[str, np.ndarray]]:
+    """HV_NewInfections_V1 for the 15-49 indicator: uses '15-49' demo key for color consistency."""
+    arr = np.array(modvars[HV_NewInfectionsTag])
+    n = arr.shape[-1]
+    if disagg_sex:
+        return [
+            ("Male", arr[1].reshape(-1, n).sum(axis=0)),
+            ("Female", arr[2].reshape(-1, n).sum(axis=0)),
+        ]
+    return [("15-49", (arr[1] + arr[2]).reshape(-1, n).sum(axis=0))]
+
+
+def _spec_aidsdeath_1549_disagg(modvars: dict, _disagg_age: bool, disagg_sex: bool) -> list[tuple[str, np.ndarray]]:
+    """HV_AIDSDeaths_V1 for the 15-49 indicator: uses '15-49' demo key for color consistency."""
+    arr = np.array(modvars[HV_AIDSDeathsTag])
+    n = arr.shape[-1]
+    if disagg_sex:
+        return [
+            ("Male", arr[1].reshape(-1, n).sum(axis=0)),
+            ("Female", arr[2].reshape(-1, n).sum(axis=0)),
+        ]
+    return [("15-49", (arr[1] + arr[2]).reshape(-1, n).sum(axis=0))]
+
+
 def _spec_hivpop_disagg(modvars: dict, _disagg_age: bool, disagg_sex: bool) -> list[tuple[str, np.ndarray]]:
     """HV_TotalAdultsHIV_V1 (3, 81): sex [0]=both, [1]=male, [2]=female. No age disagg."""
     arr = np.array(modvars[HV_TotalAdultsHIVTag])
@@ -325,6 +349,105 @@ def _spec_art_disagg(modvars: dict, _disagg_age: bool, disagg_sex: bool) -> list
 
 
 # ---------------------------------------------------------------------------
+# Disagg helpers for 15-49-restricted indicators
+# ---------------------------------------------------------------------------
+
+def _disagg_std_1549(key: str) -> Callable:
+    """Disagg for a (81, 2, n_years) Goals array restricted to ages 15-49.
+    Returns [] when disagg_age=True (no meaningful age faceting for a 15-49 aggregate)."""
+    def fn(output: dict, disagg_age: bool, disagg_sex: bool) -> list[tuple[str, np.ndarray]]:
+        if disagg_age:
+            return []
+        arr = output[key]
+        sex_specs = (
+            [(sl, i) for i, sl in enumerate(SEX_LABELS)]
+            if disagg_sex else [(None, None)]
+        )
+        series: list[tuple[str, np.ndarray]] = []
+        for sex_label, sex_idx in sex_specs:
+            data = _sum_std(arr, slice(15, 50), sex_idx)
+            series.append((sex_label if sex_label else "15-49", data))
+        return series
+    return fn
+
+
+def _no_age_disagg(disagg_fn: Callable) -> Callable:
+    """Wraps any disagg function to return [] when disagg_age=True."""
+    def wrapper(output: dict, disagg_age: bool, disagg_sex: bool) -> list[tuple[str, np.ndarray]]:
+        if disagg_age:
+            return []
+        return disagg_fn(output, False, disagg_sex)
+    return wrapper
+
+
+# ---------------------------------------------------------------------------
+# Spectrum helpers for 15-49 sub-range
+# ---------------------------------------------------------------------------
+
+def _spec_totpop_1549(modvars: dict) -> np.ndarray:
+    """DP_BigPop_V1: sum male + female over ages 15-49."""
+    arr = np.array(modvars[DP_BigPopTag])  # (3, 81_ages, 81_years)
+    return (arr[1, 15:50, :] + arr[2, 15:50, :]).sum(axis=0)
+
+
+def _spec_totpop_1549_disagg(modvars: dict, disagg_age: bool, disagg_sex: bool) -> list[tuple[str, np.ndarray]]:
+    """DP_BigPop_V1 ages 15-49 only; returns [] in age-faceted view."""
+    if disagg_age:
+        return []
+    arr = np.array(modvars[DP_BigPopTag])
+    if disagg_sex:
+        return [
+            ("Male", arr[1, 15:50, :].sum(axis=0)),
+            ("Female", arr[2, 15:50, :].sum(axis=0)),
+        ]
+    return [("15-49", (arr[1, 15:50, :] + arr[2, 15:50, :]).sum(axis=0))]
+
+
+# ---------------------------------------------------------------------------
+# Leapfrog Goals compute functions (disagg_sex only; hidden in age-faceted view)
+# ---------------------------------------------------------------------------
+
+def _goals_total_pop_1549(goals_output: dict, disagg_sex: bool) -> list[tuple[str, np.ndarray]]:
+    """total_population (n_years,) — scalar 15-49 aggregate, no sex disagg available.
+    Returns empty when disagg_sex=True so a scalar doesn't appear alongside M/F lines."""
+    if disagg_sex:
+        return []
+    return [("15-49", goals_output["total_population"])]
+
+
+def _goals_total_deaths_hiv(goals_output: dict, disagg_sex: bool) -> list[tuple[str, np.ndarray]]:
+    """total_deaths_hiv (n_years,) — scalar, no sex disagg available.
+    Returns empty when disagg_sex=True."""
+    if disagg_sex:
+        return []
+    return [("15-49", goals_output["total_deaths_hiv"])]
+
+
+def _goals_newinf(goals_output: dict, disagg_sex: bool) -> list[tuple[str, np.ndarray]]:
+    """new_infections_goals (3, n_years): [0]=Male, [1]=Female, [2]=Both."""
+    arr = goals_output["new_infections_goals"]
+    if disagg_sex:
+        return [("Male", arr[0]), ("Female", arr[1])]
+    return [("15-49", arr[2])]
+
+
+def _goals_incidence(goals_output: dict, disagg_sex: bool) -> list[tuple[str, np.ndarray]]:
+    """incidence_goals (3, n_years): [0]=Male, [1]=Female, [2]=Both. Multiplied by 100 → percent."""
+    arr = goals_output["incidence_goals"] * 100.0
+    if disagg_sex:
+        return [("Male", arr[0]), ("Female", arr[1])]
+    return [("15-49", arr[2])]
+
+
+def _goals_prevalence(goals_output: dict, disagg_sex: bool) -> list[tuple[str, np.ndarray]]:
+    """prevalence (18, 3, n_years): index [0] is RG aggregate; [0]=Male, [1]=Female, [2]=Both. Multiplied by 100 → percent."""
+    arr = goals_output["prevalence"][len(goals_output["prevalence"])-1] * 100.0  # (3, n_years)
+    if disagg_sex:
+        return [("Male", arr[0]), ("Female", arr[1])]
+    return [("15-49", arr[2])]
+
+
+# ---------------------------------------------------------------------------
 # Indicator definitions
 # ---------------------------------------------------------------------------
 
@@ -334,9 +457,12 @@ class IndicatorDef:
     compute_goals_disagg: Callable[[dict, bool, bool], list[tuple[str, np.ndarray]]]
     compute_spectrum: Callable[[dict], np.ndarray] | None
     compute_spectrum_disagg: Callable[[dict, bool, bool], list[tuple[str, np.ndarray]]] | None = field(default=None)
+    # Goals-specific outputs (hidden in age-faceted view); signature: (goals_output, disagg_sex)
+    compute_leapfrog_goals_disagg: Callable[[dict, bool], list[tuple[str, np.ndarray]]] | None = field(default=None)
 
 
 INDICATOR_MAP: OrderedDict[str, IndicatorDef] = OrderedDict([
+    # --- All-ages indicators: Leapfrog DP/AIM vs Spectrum only ---
     ("Total population", IndicatorDef(
         compute_goals=lambda o: _sum_std(o["p_totpop"]),
         compute_goals_disagg=_disagg_std("p_totpop"),
@@ -372,22 +498,47 @@ INDICATOR_MAP: OrderedDict[str, IndicatorDef] = OrderedDict([
         compute_spectrum=_spec_art,
         compute_spectrum_disagg=_spec_art_disagg,
     )),
-    ("Prevalence (15-49)", IndicatorDef(
+
+    # --- 15-49 indicators: all three sources; age disagg disabled ---
+    ("Total population 15-49", IndicatorDef(
+        compute_goals=lambda o: _sum_std(o["p_totpop"], slice(15, 50)),
+        compute_goals_disagg=_disagg_std_1549("p_totpop"),
+        compute_spectrum=_spec_totpop_1549,
+        compute_spectrum_disagg=_spec_totpop_1549_disagg,
+        compute_leapfrog_goals_disagg=_goals_total_pop_1549,
+    )),
+    ("New HIV infections 15-49", IndicatorDef(
+        compute_goals=lambda o: _sum_std(o["p_infections"], slice(15, 50)),
+        compute_goals_disagg=_disagg_std_1549("p_infections"),
+        compute_spectrum=_spec_newinf,
+        compute_spectrum_disagg=_spec_newinf_1549_disagg,
+        compute_leapfrog_goals_disagg=_goals_newinf,
+    )),
+    ("AIDS deaths 15-49", IndicatorDef(
+        compute_goals=lambda o: _sum_std(o["p_hiv_deaths"], slice(15, 50)),
+        compute_goals_disagg=_disagg_std_1549("p_hiv_deaths"),
+        compute_spectrum=_spec_aidsdeath,
+        compute_spectrum_disagg=_spec_aidsdeath_1549_disagg,
+        compute_leapfrog_goals_disagg=_goals_total_deaths_hiv,
+    )),
+    ("Prevalence (15-49) (%)", IndicatorDef(
         compute_goals=lambda o: 100.0 * _sum_std(o["p_hivpop"], slice(15, 50)) / np.where(
             _sum_std(o["p_totpop"], slice(15, 50)) == 0, np.nan,
             _sum_std(o["p_totpop"], slice(15, 50))
         ),
-        compute_goals_disagg=_disagg_prevalence(),
+        compute_goals_disagg=_no_age_disagg(_disagg_prevalence()),
         compute_spectrum=_spec_prevalence,
+        compute_leapfrog_goals_disagg=_goals_prevalence,
     )),
-    ("Incidence (15-49) (Percent)", IndicatorDef(
+    ("Incidence (15-49) (%)", IndicatorDef(
         compute_goals=lambda o: 100.0 * _sum_std(o["p_infections"], slice(15, 50)) / np.where(
             (_sum_std(o["p_totpop"], slice(15, 50)) - _sum_std(o["p_hivpop"], slice(15, 50))) == 0,
             np.nan,
             _sum_std(o["p_totpop"], slice(15, 50)) - _sum_std(o["p_hivpop"], slice(15, 50)),
         ),
-        compute_goals_disagg=_disagg_incidence(),
+        compute_goals_disagg=_no_age_disagg(_disagg_incidence()),
         compute_spectrum=_spec_incidence,
+        compute_leapfrog_goals_disagg=_goals_incidence,
     )),
 ])
 

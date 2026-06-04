@@ -60,8 +60,12 @@ def _series_for_age_cell(
     return cell
 
 
-def _leapfrog_label(demo: str) -> str:
-    return "Leapfrog" if demo == "Total" else f"Leapfrog {demo}"
+def _dp_aim_label(demo: str) -> str:
+    return "Leapfrog DP/AIM" if demo == "Total" else f"Leapfrog DP/AIM {demo}"
+
+
+def _goals_label(demo: str) -> str:
+    return "Leapfrog Goals" if demo == "Total" else f"Leapfrog Goals {demo}"
 
 
 def _spectrum_label(demo: str) -> str:
@@ -132,18 +136,19 @@ def server(input, output, session):
 
     @reactive.calc
     def _run_pjnz():
+        """Returns (data, error_str). Exactly one of the two will be None."""
         pjnz_stem = input.pjnz()
         if not pjnz_stem or pjnz_stem not in _pjnz_files:
-            return None
+            return None, None
         try:
-            return run_pjnz(_pjnz_files[pjnz_stem])
+            return run_pjnz(_pjnz_files[pjnz_stem]), None
         except Exception as exc:
             print(f"[app] Failed to run {pjnz_stem}: {exc}")
-            return None
+            return None, str(exc)
 
     @reactive.effect
     def _update_year_slider():
-        result = _run_pjnz()
+        result, _ = _run_pjnz()
         if result is None:
             return
         _, _, output_years = result
@@ -153,8 +158,16 @@ def server(input, output, session):
     @output
     @render.ui
     def comparison_plot():
-        result = _run_pjnz()
+        result, error = _run_pjnz()
         if result is None:
+            if error:
+                return ui.div(
+                    ui.p(
+                        f"Error running model for '{input.pjnz()}':",
+                        style="font-weight:bold; color:#c0392b; margin-bottom:4px;",
+                    ),
+                    ui.pre(error, style="white-space:pre-wrap; color:#c0392b; font-size:0.85em;"),
+                )
             msg = "No PJNZ files found, check 'PJNZ_DIR' in 'config.py'." if not _pjnz_stems else "Loading..."
             return ui.p(msg)
 
@@ -274,7 +287,7 @@ def server(input, output, session):
                     for demo, values in _series_for_age_cell(all_series, age_label):
                         _add_trace(
                             fig, x_years, values[mask].tolist(),
-                            _leapfrog_label(demo), demo, None,
+                            _dp_aim_label(demo), demo, None,
                             row, col,
                         )
                     if spec_has_ages:
@@ -329,15 +342,15 @@ def server(input, output, session):
                 row = ind_idx + 1
                 ind_def = INDICATOR_MAP[indicator]
 
-                # Leapfrog (solid lines)
+                # Leapfrog DP/AIM (solid lines)
                 for demo, values in ind_def.compute_goals_disagg(goals_output, False, disagg_sex):
                     _add_trace(
                         fig, x_years, values[mask].tolist(),
-                        _leapfrog_label(demo), demo, None,
+                        _dp_aim_label(demo), demo, None,
                         row, 1,
                     )
 
-                # Spectrum (dashed lines, same color as matching Leapfrog series)
+                # Spectrum (dashed lines, same color as matching DP/AIM series)
                 for demo, spec_values in _get_spec_series(ind_def):
                     spec_x, spec_y = _align_spec(spec_values)
                     if spec_x:
@@ -346,6 +359,18 @@ def server(input, output, session):
                             _spectrum_label(demo), demo, "dash",
                             row, 1,
                         )
+
+                # Leapfrog Goals (dotted lines, same color as matching series)
+                if ind_def.compute_leapfrog_goals_disagg is not None:
+                    try:
+                        for demo, values in ind_def.compute_leapfrog_goals_disagg(goals_output, disagg_sex):
+                            _add_trace(
+                                fig, x_years, values[mask].tolist(),
+                                _goals_label(demo), demo, "dot",
+                                row, 1,
+                            )
+                    except Exception as exc:
+                        print(f"[app] Goals disagg failed for {indicator}: {exc}")
 
             fig.update_xaxes(
                 showgrid=True,

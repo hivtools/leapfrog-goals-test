@@ -2,6 +2,7 @@
 Load a PJNZ file and run the leapfrog goals model.
 """
 from pathlib import Path
+import time
 
 import numpy as np
 
@@ -33,7 +34,12 @@ def run_pjnz(pjnz_path: Path) -> tuple[dict, dict[str, np.ndarray], range]:
     final_year = int(modvars[PJN_FinalYearTag])
     output_years = range(first_year, final_year + 1)
 
+    start = time.time()
     goals_output = run_goals(lf_data, output_years=output_years)
+    end = time.time()
+
+    elapsed_ms = (end-start) * 1000
+    print(f"Mode fit took: {elapsed_ms} ms")
 
     return modvars, goals_output, output_years
 
