@@ -18,23 +18,9 @@ The app loads each PJNZ file directly, runs the leapfrog Goals model, and plots 
 
 ## Prerequisites
 
-### 1. Python ≥ 3.10 and uv
+### 1. Python ≥ 3.11 and uv
 
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/) if you haven't already.
-
-### 2. leapfrog-goals Python package
-
-The `leapfrog-goals` package contains compiled C++ extensions and must be installed separately.
-
-```bash
-# Point uv at your local clone of leapfrog/goals, e.g.:
-uv pip install ../leapfrog/goals
-
-# Or using a full path:
-uv pip install /path/to/leapfrog/goals
-```
-
-> **If you are on a different machine**, clone the leapfrog repository and adjust `leapfrog-goals` in `pyproject.toml` to match your local path.
 
 ---
 
@@ -45,6 +31,8 @@ uv pip install /path/to/leapfrog/goals
 ```bash
 uv sync
 ```
+
+If you want to use an in development leapfrog-goals you will need to check it out locally and then update the `tools.uv.sources` section in `pyproject.toml` to point to your local path.
 
 ### 2. Edit `src/leapfrog_compare/config.py`
 
