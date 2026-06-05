@@ -247,8 +247,12 @@ def _spec_art(modvars: dict) -> np.ndarray:
 
 def _spec_prevalence(modvars: dict) -> np.ndarray:
     """HV_CalcPrevalence_V1: sum male (row 1) + female (row 2) over all risk groups."""
-    arr = np.array(modvars[HV_CalcPrevalenceTag])  # (3, 11, 81)  sex × risk_grp × year
-    return (arr[1] + arr[2]).sum(axis=0)
+    # arr = np.array(modvars[HV_CalcPrevalenceTag])  # (3, 11, 81)  sex × risk_grp × year
+    HIV = np.array(modvars[HV_TotalAdultsHIVTag]).sum(axis=0)  #
+    POP = np.array(modvars[DP_BigPopTag]) # (81, 81)  age × year
+
+        
+    return HIV/(POP[1]+POP[2]).sum(axis=0)
 
 
 def _spec_incidence(modvars: dict) -> np.ndarray:
