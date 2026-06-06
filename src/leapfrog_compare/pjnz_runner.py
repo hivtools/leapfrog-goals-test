@@ -41,5 +41,15 @@ def run_pjnz(pjnz_path: Path) -> tuple[dict, dict[str, np.ndarray], range]:
     elapsed_ms = (end-start) * 1000
     print(f"Mode fit took: {elapsed_ms} ms")
 
+
+    print(f"lfg total population, t end: {goals_output["total_population"][-1]:.1f}")
+    print(f"lfg total plhiv population, t end: {goals_output["total_plhiv"][-1]:.1f}")
+    print(f"lfg total deaths, t end: {goals_output["total_deaths"][-1]:.1f}")
+    print(f"lfg total deaths hiv, t end: {goals_output["total_deaths_hiv"][-1]:.1f}")
+    print(f"lfg total new infections, t end: {goals_output["total_new_infections"][-1]:.1f}")
+    print(f"lfg total on art, t end: {goals_output["total_on_art"][-1]:.1f}")
+    print(f"lfg total prevalence (%), t end: {100*goals_output["prevalence"][-1][-1][-1]:.1f}")
+    print(f"lfg total incidence (%), t end: {100*goals_output["incidence_goals"][-1][-1]:.1f}")
+
     return modvars, goals_output, output_years
 
