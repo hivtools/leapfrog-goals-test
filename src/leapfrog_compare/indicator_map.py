@@ -48,6 +48,7 @@ from SpectrumCommon.Const.HV.HVTags import (  # type: ignore[import-untyped]
     HV_NewInfectionsTag,
     HV_TotalAdultsARTTag,
     HV_TotalAdultsHIVTag,
+    HV_PopulationsTag,
 )
 
 
@@ -247,12 +248,18 @@ def _spec_art(modvars: dict) -> np.ndarray:
 
 def _spec_prevalence(modvars: dict) -> np.ndarray:
     """HV_CalcPrevalence_V1: sum male (row 1) + female (row 2) over all risk groups."""
-    # arr = np.array(modvars[HV_CalcPrevalenceTag])  # (3, 11, 81)  sex × risk_grp × year
-    HIV = np.array(modvars[HV_TotalAdultsHIVTag]).sum(axis=0)  #
-    POP = np.array(modvars[DP_BigPopTag]) # (81, 81)  age × year
+    arr = np.array(modvars[HV_CalcPrevalenceTag])  # (3, 11, 81)  sex × risk_grp × year
+    #return arr[0][0]
+    POP = np.array(modvars[HV_PopulationsTag]) 
+    HIV = np.array(modvars[HV_TotalAdultsHIVTag])
+    PREV =  (HIV[1]+HIV[2])/(POP[1]+POP[2])
+    return 100*PREV
+
+    #HIV = np.array(modvars[HV_TotalAdultsHIVTag]).sum(axis=0)  #
+    #POP = np.array(modvars[DP_BigPopTag]) # (81, 81)  age × year
 
         
-    return HIV/(POP[1]+POP[2]).sum(axis=0)
+    #return HIV/(POP[1]+POP[2]).sum(axis=0)
 
 
 def _spec_incidence(modvars: dict) -> np.ndarray:
@@ -427,6 +434,14 @@ def _goals_total_deaths_hiv(goals_output: dict, disagg_sex: bool) -> list[tuple[
     return [("15-49", goals_output["total_deaths_hiv"])]
 
 
+def _goals_plhiv(goals_output: dict, disagg_sex: bool) -> list[tuple[str, np.ndarray]]:
+    """total_plhiv (n_years,) — scalar, no sex disagg available.
+    Returns empty when disagg_sex=True."""
+    if disagg_sex:
+        return []
+    return [("15-49", goals_output["total_plhiv"])]
+
+
 def _goals_newinf(goals_output: dict, disagg_sex: bool) -> list[tuple[str, np.ndarray]]:
     """new_infections_goals (3, n_years): [0]=Male, [1]=Female, [2]=Both."""
     arr = goals_output["new_infections_goals"]
@@ -511,6 +526,16 @@ INDICATOR_MAP: OrderedDict[str, IndicatorDef] = OrderedDict([
         compute_spectrum_disagg=_spec_totpop_1549_disagg,
         compute_leapfrog_goals_disagg=_goals_total_pop_1549,
     )),
+
+    ("Total PLHIV 15-49", IndicatorDef(
+        compute_leapfrog_aim=lambda o: _sum_std(o["p_hivpop"], slice(15, 50)),
+        compute_leapfrog_aim_disagg=_disagg_std_1549("p_hivpop"),
+        compute_spectrum=_spec_hivpop,
+        compute_spectrum_disagg=_spec_hivpop_disagg,
+        compute_leapfrog_goals_disagg=_goals_plhiv,
+    )),
+
+
     ("New HIV infections 15-49", IndicatorDef(
         compute_leapfrog_aim=lambda o: _sum_std(o["p_infections"], slice(15, 50)),
         compute_leapfrog_aim_disagg=_disagg_std_1549("p_infections"),
@@ -534,8 +559,10 @@ INDICATOR_MAP: OrderedDict[str, IndicatorDef] = OrderedDict([
         compute_spectrum=_spec_prevalence,
         compute_leapfrog_goals_disagg=_goals_prevalence,
     )),
+
+
     ("Incidence (15-49) (%)", IndicatorDef(
-        compute_leapfrog_aim=lambda o: 100.0 * _sum_std(o["p_infections"], slice(15, 50)) / np.where(
+        compute_leapfrog_aim=lambda o: 100*_sum_std(o["p_infections"], slice(15, 50)) / np.where(
             (_sum_std(o["p_totpop"], slice(15, 50)) - _sum_std(o["p_hivpop"], slice(15, 50))) == 0,
             np.nan,
             _sum_std(o["p_totpop"], slice(15, 50)) - _sum_std(o["p_hivpop"], slice(15, 50)),
