@@ -191,10 +191,13 @@ def _disagg_incidence() -> Callable:
         tot = output["p_totpop"]
         series: list[tuple[str, np.ndarray]] = []
 
-        age_specs = (
-            [(label, slice(a, b + 1)) for (a, b), label in zip(AGE_GROUPS, AGE_LABELS)]
-            if disagg_age else [(None, None)]
-        )
+        # age_specs = (
+        #     [(label, slice(a, b + 1)) for (a, b), label in zip(AGE_GROUPS, AGE_LABELS)]
+        #     if disagg_age else [(None, None)]
+        # )
+        # Ignore age disagg for incidence since it's only defined for ages 15-49; 
+        # we'll return a single 15-49 aggregate line instead of age-faceted lines.
+        age_specs = [("15-49", slice(15, 50))] 
         sex_specs = (
             [(sl, i) for i, sl in enumerate(SEX_LABELS)]
             if disagg_sex else [(None, None)]
@@ -268,7 +271,7 @@ def _spec_prevalence(modvars: dict) -> np.ndarray:
 
 def _spec_incidence(modvars: dict) -> np.ndarray:
     """HV_Incidence_V1 is a proportion; multiply by 100 for percent."""
-    return np.array(modvars[HV_IncidenceTag]) 
+    return 100*np.array(modvars[HV_IncidenceTag]) 
 
 
 def _spec_tot_plhiv(modvars: dict) -> np.ndarray:
