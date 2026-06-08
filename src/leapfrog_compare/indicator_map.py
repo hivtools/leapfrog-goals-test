@@ -257,7 +257,17 @@ def _spec_prevalence(modvars: dict) -> np.ndarray:
 
 def _spec_incidence(modvars: dict) -> np.ndarray:
     """HV_Incidence_V1 is a proportion; multiply by 100 for percent."""
-    return np.array(modvars[HV_IncidenceTag]) * 100.0
+    return np.array(modvars[HV_IncidenceTag]) 
+
+
+def _spec_tot_plhiv(modvars: dict) -> np.ndarray:
+    """Total PLHIV: same as HV_TotalAdultsHIV_V1."""
+    return np.array(modvars[HV_TotalAdultsHIVTag])    
+
+
+def _spec_tot_on_art(modvars: dict) -> np.ndarray:
+    """Total on ART: same as HV_TotalAdultsART_V1."""
+    return np.array(modvars[HV_TotalAdultsARTTag]) 
 
 
 # ---------------------------------------------------------------------------
@@ -535,7 +545,7 @@ INDICATOR_MAP: OrderedDict[str, IndicatorDef] = OrderedDict([
         compute_leapfrog_goals_disagg=_goals_prevalence,
     )),
     ("Incidence (15-49) (%)", IndicatorDef(
-        compute_leapfrog_aim=lambda o: 100.0 * _sum_std(o["p_infections"], slice(15, 50)) / np.where(
+        compute_leapfrog_aim=lambda o: 0.0 * _sum_std(o["p_infections"], slice(15, 50)) / np.where(
             (_sum_std(o["p_totpop"], slice(15, 50)) - _sum_std(o["p_hivpop"], slice(15, 50))) == 0,
             np.nan,
             _sum_std(o["p_totpop"], slice(15, 50)) - _sum_std(o["p_hivpop"], slice(15, 50)),
@@ -543,7 +553,19 @@ INDICATOR_MAP: OrderedDict[str, IndicatorDef] = OrderedDict([
         compute_leapfrog_aim_disagg=_no_age_disagg(_disagg_incidence()),
         compute_spectrum=_spec_incidence,
         compute_leapfrog_goals_disagg=_goals_incidence,
-    )),
+        )),
+        ("Total PLHIV", IndicatorDef(
+            compute_leapfrog_aim=lambda o: _sum_std(o["total_plhiv"]),
+            compute_leapfrog_aim_disagg=_disagg_std("total_plhiv"),
+            compute_spectrum=_spec_tot_plhiv,
+            # compute_spectrum_disagg=_spec_tot_plhiv_disagg,
+        )),
+        ("Total on ART", IndicatorDef(
+            compute_leapfrog_aim=lambda o: _sum_std(o["total_on_art"]),
+            compute_leapfrog_aim_disagg=_disagg_std("total_on_art"),
+            compute_spectrum=_spec_tot_on_art,
+            # compute_spectrum_disagg=_spec_tot_on_art_disagg,
+        )),
 ])
 
 
