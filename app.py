@@ -95,7 +95,7 @@ app_ui = ui.page_fluid(
                 label="Indicators",
                 choices=ALL_INDICATOR_NAMES,
                 multiple=True,
-                selected=ALL_INDICATOR_NAMES[:3],
+                selected=ALL_INDICATOR_NAMES[6:12],
                 options={"plugins": ["remove_button"]},
             ),
             ui.hr(),
