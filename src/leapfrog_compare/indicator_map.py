@@ -159,10 +159,14 @@ def _disagg_prevalence() -> Callable:
         tot = output["p_totpop"]
         series: list[tuple[str, np.ndarray]] = []
 
-        age_specs = (
-            [(label, slice(a, b + 1)) for (a, b), label in zip(AGE_GROUPS, AGE_LABELS)]
-            if disagg_age else [(None, None)]
-        )
+        # age_specs = (
+        #     [(label, slice(a, b + 1)) for (a, b), label in zip(AGE_GROUPS, AGE_LABELS)]
+        #     if disagg_age else [(None, None)]
+        # )
+
+        # Ignore age disagg for prevalence since it's only defined for ages 15-49; 
+        # we'll return a single 15-49 aggregate line instead of age-faceted lines.
+        age_specs = [("15-49", slice(15, 50))] 
         sex_specs = (
             [(sl, i) for i, sl in enumerate(SEX_LABELS)]
             if disagg_sex else [(None, None)]
@@ -581,13 +585,13 @@ INDICATOR_MAP: OrderedDict[str, IndicatorDef] = OrderedDict([
         compute_spectrum=_spec_incidence,
         compute_leapfrog_goals_disagg=_goals_incidence,
         )),
-        ("Total PLHIV", IndicatorDef(
+    ("Total PLHIV", IndicatorDef(
             compute_leapfrog_aim=lambda o: _sum_std(o["total_plhiv"]),
             compute_leapfrog_aim_disagg=_disagg_std("total_plhiv"),
             compute_spectrum=_spec_tot_plhiv,
             # compute_spectrum_disagg=_spec_tot_plhiv_disagg,
         )),
-        ("Total on ART", IndicatorDef(
+    ("Total on ART", IndicatorDef(
             compute_leapfrog_aim=lambda o: _sum_std(o["total_on_art"]),
             compute_leapfrog_aim_disagg=_disagg_std("total_on_art"),
             compute_spectrum=_spec_tot_on_art,
