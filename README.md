@@ -224,10 +224,10 @@ ART duration stages: 0 = <6 months, 1 = 6–12 months, 2 = >12 months. Under-15 
 | | Detail |
 |---|---|
 | **Leapfrog DP/AIM** | `100 × sum(p_hivpop[15:50]) / sum(p_totpop[15:50])` |
-| **Spectrum modvar** | `HV_CalcPrevalence_V1` |
-| **Spectrum PJNZ tag** | `<CalcPrevalence MV>` |
-| **Spectrum shape** | `(3, 11, 81)` — sex × risk group × year; index 0 = both, 1 = male, 2 = female |
-| **Spectrum aggregation** | Rows 1 (male) + 2 (female) summed over all 11 risk-group columns |
+| **Spectrum modvar** | `HV_TotalAdultsHIVTag` and `DP_BigPopTag` |
+| **Spectrum PJNZ tag** | `<TotalAdultsHIV MV>` and `<BigPop MV3>` |
+| **Spectrum shape** | `(3, n_years)` and `(3, n_years)` 3 is n sexes both, male, female |
+| **Spectrum aggregation** | Sum male and female total hiv / big pop |
 | **Leapfrog Goals output** | `prevalence` × 100 |
 | **Leapfrog Goals shape** | `(18, 3, n_years)` — risk group × sex × year |
 | **Leapfrog Goals aggregation** | Last RG-aggregate row; sex index 0 = male, 1 = female, 2 = both |
@@ -247,6 +247,32 @@ ART duration stages: 0 = <6 months, 1 = 6–12 months, 2 = >12 months. Under-15 
 | **Leapfrog Goals aggregation** | Index 2 (both) for total; indices 0 and 1 for sex disaggregation |
 
 ---
+
+### Total PLHIV (15-49)
+
+| | Detail |
+|---|---|
+| **Leapfrog DP/AIM** | `p_hivpop` limited to 15-49 |
+| **Spectrum modvar** | `HV_TotalAdultsHIVTag` |
+| **Spectrum PJNZ tag** | `<TotalAdultsHIV MV>` |
+| **Spectrum shape** | (3, n_years) |
+| **Leapfrog Goals output** | `total_plhiv` |
+| **Leapfrog Goals shape** | (n_years) |
+| **Leapfrog Goals aggregation** | None needed, already aggregated |
+
+---
+
+### Total on ART (15-49)
+
+| | Detail |
+|---|---|
+| **Leapfrog DP/AIM** | `total_on_art` |
+| **Spectrum modvar** | `HV_TotalAdultsARTTag` |
+| **Spectrum PJNZ tag** | ? |
+| **Spectrum shape** | ? |
+| **Leapfrog Goals output** | ? |
+| **Leapfrog Goals shape** | ? |
+| **Leapfrog Goals aggregation** | ? |
 
 ## Adding new indicators
 
