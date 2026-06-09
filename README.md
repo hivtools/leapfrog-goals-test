@@ -54,11 +54,22 @@ Open [http://127.0.0.1:8000](http://127.0.0.1:8000) in your browser.
 
 ## Dashboard controls
 
+Global controls (sidebar):
 - **PJNZ** — select which projection to compare
-- **Indicators** — choose one or more indicators; the plot facets by indicator
 - **Year range** — slider set automatically from the PJNZ projection years
-- **Disaggregation** — optionally break down by five-year age group and/or sex
-- Each facet shows a **Leapfrog** (solid) line and a **Spectrum** (dashed) line in the same colour
+
+The main area has three tabs:
+
+| Tab | Indicators | Disaggregation |
+|---|---|---|
+| **15-49** | 15–49 aggregate indicators; all three sources | By sex |
+| **All ages** | All-ages indicators; Leapfrog DP/AIM vs Spectrum | By age group and/or sex |
+| **Risk groups** | Fixed 5-panel risk-group fraction plot | By sex |
+
+Line styles:
+- **Leapfrog DP/AIM** (solid) — from `run_goals` DP/AIM-derived arrays
+- **Spectrum** (dashed) — read directly from PJNZ modvars
+- **Leapfrog Goals** (dotted) — Goals-native outputs; 15–49 tab only
 
 ---
 
@@ -79,22 +90,10 @@ leapfrog-compare/
 
 ## Indicator reference
 
-For each indicator: the leapfrog Goals output array used, its dimensions, the Spectrum modvar tag, and the modvar dimensions.
-
 > **Leapfrog array dimensions** — most population-like outputs share the shape `(81, 2, n_years)`:
 > - axis 0 = single-year ages 0–80
 > - axis 1 = sex (0 = male, 1 = female)
 > - axis 2 = projection years
-
-Indicators are split into two groups:
-
-- **All-ages** — compare Leapfrog DP/AIM vs Spectrum across all age groups; support age and sex disaggregation.
-- **15–49** — compare all three sources restricted to the 15–49 population; **age disaggregation is disabled** for these (Goals outputs are pre-aggregated over 15–49).
-
-Line styles:
-- **Leapfrog DP/AIM** (solid) — from `run_goals` DP/AIM-derived arrays
-- **Spectrum** (dashed) — read directly from PJNZ modvars
-- **Leapfrog Goals** (dotted) — Goals-native outputs; 15–49 indicators only; hidden in age-faceted view
 
 ---
 
@@ -266,23 +265,78 @@ ART duration stages: 0 = <6 months, 1 = 6–12 months, 2 = >12 months. Under-15 
 
 | | Detail |
 |---|---|
-| **Leapfrog DP/AIM** | `total_on_art` |
-| **Spectrum modvar** | `HV_TotalAdultsARTTag` |
-| **Spectrum PJNZ tag** | ? |
-| **Spectrum shape** | ? |
-| **Leapfrog Goals output** | ? |
-| **Leapfrog Goals shape** | ? |
-| **Leapfrog Goals aggregation** | ? |
+| **Leapfrog DP/AIM** | `total_on_art` summed over ages 15–49 |
+| **Spectrum modvar** | `HV_TotalAdultsART_V1` |
+| **Spectrum PJNZ tag** | `<TotalAdultsART MV>` |
+| **Spectrum shape** | `(3, 81)` — sex × year; index 0 = both, 1 = male, 2 = female |
+| **Leapfrog Goals output** | none available |
+
+---
+
+### Risk groups *(risk groups tab)*
+
+Five fixed subplots showing the fraction of the 15–49 population in each risk group over time, multiplied by 100 to give percent. Computed independently for Goals and Spectrum.
+
+**Goals** — `adults` array, shape `(nVAC+1=5, nRG+1=18, nCD4+1=17, nNS+1=3, n_years)`, indexed as `adults[VAC_ALL, rg_idx, CD4_ALL, sex_idx]`:
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `VAC_ALL` | 4 | All vaccination states |
+| `CD4_ALL` | 16 | All CD4 stages |
+| `RG_ALL` | 17 | Total across all risk groups (denominator) |
+| sex_idx | 0 = male, 1 = female | |
+
+| Risk group | Goals `rg_idx` |
+|---|---|
+| Low risk | 1 (RG_LRH) |
+| Medium risk | 2 (RG_MRH) |
+| High risk | 3 (RG_HRH) |
+| PWID | 4 (RG_IDU) |
+| MSM | 5 (RG_MSM) |
+
+**Spectrum** — `HV_Adults_V1`, shape `(sex, rg, hiv, vac, n_years)`, indexed as `hv_adults[sex_idx, rg_idx, HV_AllHIV, RN_AllVacc, :]`:
+
+| Constant | Value | Source |
+|---|---|---|
+| `HV_AllHIV` | 19 | `SpectrumCommon.Const.HV.HVConst` |
+| `HV_AllRisk` | 0 | `SpectrumCommon.Const.HV.HVConst` (denominator) |
+| `RN_AllVacc` | 0 | `SpectrumCommon.Const.RN.RNConst` |
+| sex_idx | 1 = male, 2 = female | (index 0 = both, not used) |
+
+| Risk group | Spectrum `rg_idx` | Constant |
+|---|---|---|
+| Low risk | 2 | `HV_LRH` |
+| Medium risk | 3 | `HV_MRH` |
+| High risk | 4 | `HV_HRH` |
+| PWID | 5 | `HV_IDU` |
+| MSM | 6 | `HV_MSM` |
+
+When sex disaggregation is off, male (index 1) + female (index 2) are summed in both numerator and denominator before dividing.
 
 ## Adding new indicators
 
-Edit [src/leapfrog_compare/indicator_map.py](src/leapfrog_compare/indicator_map.py).
+Edit [src/leapfrog_compare/indicator_map.py](src/leapfrog_compare/indicator_map.py). There are two indicator types depending on which tab the indicator belongs to:
 
-1. Write a `compute_goals` function `(output: dict) -> np.ndarray` returning a 1-D array over years.
-2. Write a `compute_goals_disagg` function. Use `_disagg_std(key)` for all-ages arrays, `_disagg_std_1549(key)` for 15–49 restricted (returns `[]` when age disagg is on), or `_no_age_disagg(fn)` to disable age disagg on any existing function.
-3. Optionally write `compute_spectrum` and `compute_spectrum_disagg` functions if a matching modvar exists.
-4. Optionally write a `compute_leapfrog_goals_disagg` function `(goals_output, disagg_sex) -> list[(label, values)]` for Goals-native outputs.
-5. Add an `IndicatorDef` entry to `INDICATOR_MAP`.
+**All-ages tab** — add an `AllAgesIndicatorDef` to `ALL_AGES_INDICATORS`:
+```python
+AllAgesIndicatorDef(
+    compute_leapfrog=...,   # (output, disagg_age, disagg_sex) -> list[(label, ndarray)]
+    compute_spectrum=...,   # (modvars, disagg_age, disagg_sex) -> list[(label, ndarray)] | None
+)
+```
+Use `_disagg_std(key)` or `_disagg_art()` for the Leapfrog function.
+
+**15–49 tab** — add an `Indicator1549Def` to `INDICATORS_1549`:
+```python
+Indicator1549Def(
+    compute_leapfrog=...,   # (output, disagg_sex) -> list[(label, ndarray)]
+    compute_spectrum=...,   # (modvars, disagg_sex) -> list[(label, ndarray)] | None
+    compute_goals=...,      # (goals_output, disagg_sex) -> list[(label, ndarray)] | None
+)
+```
+Use `_lf_1549(key)` for standard (81, 2, n_years) Goals arrays restricted to ages 15–49.
+
+Label convention: use `"Total"` for all-ages unsplit series, `"15-49"` for 15–49 unsplit series, `"Male"` / `"Female"` for sex-disaggregated series.
 
 ---
 

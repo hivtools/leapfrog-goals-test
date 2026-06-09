@@ -44,6 +44,7 @@ import numpy as np
 
 from SpectrumCommon.Const.DP.DPTags import DP_BigPopTag  # type: ignore[import-untyped]
 from SpectrumCommon.Const.HV.HVTags import (  # type: ignore[import-untyped]
+    HV_AdultsTag,
     HV_AIDSDeathsTag,
     HV_IncidenceTag,
     HV_NewInfectionsTag,
@@ -51,6 +52,16 @@ from SpectrumCommon.Const.HV.HVTags import (  # type: ignore[import-untyped]
     HV_TotalAdultsHIVTag,
     HV_PopulationsTag,
 )
+from SpectrumCommon.Const.HV.HVConst import (  # type: ignore[import-untyped]
+    HV_AllHIV,
+    HV_AllRisk,
+    HV_HRH,
+    HV_IDU,
+    HV_LRH,
+    HV_MRH,
+    HV_MSM,
+)
+from SpectrumCommon.Const.RN.RNConst import RN_AllVacc  # type: ignore[import-untyped]
 
 
 # ---------------------------------------------------------------------------
@@ -452,3 +463,80 @@ INDICATORS_1549: OrderedDict[str, Indicator1549Def] = OrderedDict([
         compute_goals=_goals_total_on_art
     )),
 ])
+
+
+# ---------------------------------------------------------------------------
+# Risk group definitions and compute functions
+# ---------------------------------------------------------------------------
+
+# Goals adults array: shape (nVAC+1=5, nRG+1=18, nCD4+1=17, nNS+1=3, n_years)
+_VAC_ALL = 4
+_CD4_ALL = 16
+_RG_ALL  = 17
+
+# (display_name, goals_rg_index) in display order
+RISK_GROUPS: list[tuple[str, int]] = [
+    ("Low risk",    1),  # RG_LRH
+    ("Medium risk", 2),  # RG_MRH
+    ("High risk",   3),  # RG_HRH
+    ("PWID",        4),  # RG_IDU
+    ("MSM",         5),  # RG_MSM
+]
+
+# Maps display name → Spectrum HV_Adults risk-group index
+_SPEC_RG_INDICES: dict[str, int] = {
+    "Low risk":    HV_LRH,
+    "Medium risk": HV_MRH,
+    "High risk":   HV_HRH,
+    "PWID":        HV_IDU,
+    "MSM":         HV_MSM,
+}
+
+
+def compute_rg_goals(
+    goals_output: dict, disagg_sex: bool
+) -> list[tuple[str, str, np.ndarray]]:
+    """
+    Risk-group fractions from Goals 'adults' (5, 18, 17, 3, n_years).
+    Returns list of (rg_name, demo, ratio) where:
+      ratio = adults[VAC_ALL, rg_idx, CD4_ALL, sex] / adults[VAC_ALL, RG_ALL, CD4_ALL, sex]
+    When disagg_sex is False, male + female are summed before dividing.
+    """
+    adults = np.array(goals_output["adults"])
+    result: list[tuple[str, str, np.ndarray]] = []
+    for rg_name, rg_idx in RISK_GROUPS:
+        if disagg_sex:
+            for sex_idx, sex_label in enumerate(SEX_LABELS):
+                num = adults[_VAC_ALL, rg_idx, _CD4_ALL, sex_idx]
+                den = adults[_VAC_ALL, _RG_ALL, _CD4_ALL, sex_idx]
+                result.append((rg_name, sex_label, 100 * num / np.where(den == 0, np.nan, den)))
+        else:
+            num = adults[_VAC_ALL, rg_idx, _CD4_ALL, 0] + adults[_VAC_ALL, rg_idx, _CD4_ALL, 1]
+            den = adults[_VAC_ALL, _RG_ALL, _CD4_ALL, 0] + adults[_VAC_ALL, _RG_ALL, _CD4_ALL, 1]
+            result.append((rg_name, "Total", 100 * num / np.where(den == 0, np.nan, den)))
+    return result
+
+
+def compute_rg_spectrum(
+    modvars: dict, disagg_sex: bool
+) -> list[tuple[str, str, np.ndarray]]:
+    """
+    Risk-group fractions from Spectrum HV_Adults_V1 (sex, rg, hiv, vac, n_years).
+    Indexed as hv_adults[sex, rg, HV_AllHIV, RN_AllVacc, :].
+    Returns list of (rg_name, demo, ratio*100).
+    When disagg_sex is False, male (1) + female (2) are summed before dividing.
+    """
+    hv_adults = np.array(modvars[HV_AdultsTag])
+    result: list[tuple[str, str, np.ndarray]] = []
+    for rg_name, _ in RISK_GROUPS:
+        spec_rg_idx = _SPEC_RG_INDICES[rg_name]
+        if disagg_sex:
+            for sex_idx, sex_label in enumerate(SEX_LABELS, start=1):  # 1=male, 2=female
+                num = hv_adults[sex_idx, spec_rg_idx, HV_AllHIV, RN_AllVacc]
+                den = hv_adults[sex_idx, HV_AllRisk, HV_AllHIV, RN_AllVacc]
+                result.append((rg_name, sex_label, 100 * num / np.where(den == 0, np.nan, den)))
+        else:
+            num = hv_adults[1, spec_rg_idx, HV_AllHIV, RN_AllVacc] + hv_adults[2, spec_rg_idx, HV_AllHIV, RN_AllVacc]
+            den = hv_adults[1, HV_AllRisk, HV_AllHIV, RN_AllVacc] + hv_adults[2, HV_AllRisk, HV_AllHIV, RN_AllVacc]
+            result.append((rg_name, "Total", 100 * num / np.where(den == 0, np.nan, den)))
+    return result
