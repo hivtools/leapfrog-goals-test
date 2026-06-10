@@ -512,7 +512,11 @@ def compute_rg_goals(
                 result.append((rg_name, sex_label, 100 * num / np.where(den == 0, np.nan, den)))
         else:
             num = adults[_VAC_ALL, rg_idx, _CD4_ALL, 0] + adults[_VAC_ALL, rg_idx, _CD4_ALL, 1]
-            den = adults[_VAC_ALL, _RG_ALL, _CD4_ALL, 0] + adults[_VAC_ALL, _RG_ALL, _CD4_ALL, 1]
+            if rg_name == "MSM":
+                ## Only ever use men as denominator for MSM, women are 0 so numerator doesn't matter
+                den = adults[_VAC_ALL, _RG_ALL, _CD4_ALL, 0]
+            else:
+                den = adults[_VAC_ALL, _RG_ALL, _CD4_ALL, 0] + adults[_VAC_ALL, _RG_ALL, _CD4_ALL, 1]
             result.append((rg_name, "Total", 100 * num / np.where(den == 0, np.nan, den)))
     return result
 
@@ -537,6 +541,9 @@ def compute_rg_spectrum(
                 result.append((rg_name, sex_label, 100 * num / np.where(den == 0, np.nan, den)))
         else:
             num = hv_adults[1, spec_rg_idx, HV_AllHIV, RN_AllVacc] + hv_adults[2, spec_rg_idx, HV_AllHIV, RN_AllVacc]
-            den = hv_adults[1, HV_AllRisk, HV_AllHIV, RN_AllVacc] + hv_adults[2, HV_AllRisk, HV_AllHIV, RN_AllVacc]
+            if rg_name == "MSM":
+                den = hv_adults[1, HV_AllRisk, HV_AllHIV, RN_AllVacc]
+            else:
+                den = hv_adults[1, HV_AllRisk, HV_AllHIV, RN_AllVacc] + hv_adults[2, HV_AllRisk, HV_AllHIV, RN_AllVacc]
             result.append((rg_name, "Total", 100 * num / np.where(den == 0, np.nan, den)))
     return result
