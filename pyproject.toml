@@ -13,6 +13,7 @@ dependencies = [
     "avenir-spectrum-common>=0.1.6",
     "avenir-spectrum-import-pjnz>=0.1.5",
     "leapfrog-goals>=0.0.5",
+    "shinywidgets>=0.8.1",
 ]
 
 # Uncomment and set the path to use local version of leapfrog-goals when developing

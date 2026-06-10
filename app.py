@@ -80,27 +80,7 @@ def _spectrum_label(demo: str) -> str:
 
 app_ui = ui.page_fluid(
     ui.head_content(
-        ui.tags.script(src="https://cdn.plot.ly/plotly-latest.min.js"),
-        ui.tags.script("""
-            // Plotly.js detects window.Shiny and calls Shiny.setInputValue() for
-            // hover/click/relayout/etc events, which triggers reactive re-renders.
-            // Patch setInputValue to drop all Plotly-originated events.
-            (function() {
-                function patch() {
-                    if (!window.Shiny || !window.Shiny.setInputValue) return;
-                    if (window.Shiny.setInputValue._plotlyPatched) return;
-                    var orig = window.Shiny.setInputValue;
-                    window.Shiny.setInputValue = function(name, value, opts) {
-                        var plotlyEvents = /_hover$|_unhover$|_click$|_selected$|_selecting$|_deselect$|_afterplot$|_relayout$|_restyle$|_doubleclick$|_beforeplot$|_animated$|_transitioning$/;
-                        if (plotlyEvents.test(name)) return;
-                        return orig.call(this, name, value, opts);
-                    };
-                    window.Shiny.setInputValue._plotlyPatched = true;
-                }
-                document.addEventListener('shiny:connected', patch);
-                window.addEventListener('load', function() { setTimeout(patch, 0); });
-            })();
-        """),
+        ui.tags.script(src="https://cdn.plot.ly/plotly-latest.min.js")
     ),
     ui.page_sidebar(
         ui.sidebar(
@@ -250,10 +230,11 @@ def server(input, output, session):
             show_leg = trace_name not in legend_shown
             if show_leg:
                 legend_shown.add(trace_name)
+            y_clean = [None if isinstance(v, float) and np.isnan(v) else v for v in y]
             fig.add_trace(
                 go.Scatter(
                     x=x,
-                    y=y,
+                    y=y_clean,
                     mode="lines",
                     name=trace_name,
                     line=dict(color=_color_for(demo), width=line_width, dash=dash),
@@ -270,9 +251,9 @@ def server(input, output, session):
     # All-ages tab
     # -----------------------------------------------------------------------
 
-    @output
     @render.ui
     def all_ages_plot():
+        input.main_tabs()
         result, error = _run_pjnz()
         if result is None:
             return _loading_ui(error)
@@ -369,9 +350,6 @@ def server(input, output, session):
                 plot_bgcolor="white",
                 paper_bgcolor="white",
             )
-            html = fig.to_html(
-                full_html=False, include_plotlyjs=False, config={"responsive": False}
-            )
 
         # -------------------------------------------------------------------
         # Simple layout: one column, rows = indicators
@@ -417,19 +395,16 @@ def server(input, output, session):
                 plot_bgcolor="white",
                 paper_bgcolor="white",
             )
-            html = fig.to_html(
-                full_html=False, include_plotlyjs=False, config={"responsive": True}
-            )
 
-        return ui.HTML(html)
+        return ui.HTML(fig.to_html(full_html=False, include_plotlyjs=False))
 
     # -----------------------------------------------------------------------
     # 15-49 tab
     # -----------------------------------------------------------------------
 
-    @output
     @render.ui
     def plot_1549():
+        input.main_tabs()
         result, error = _run_pjnz()
         if result is None:
             return _loading_ui(error)
@@ -502,17 +477,15 @@ def server(input, output, session):
             paper_bgcolor="white",
         )
 
-        return ui.HTML(
-            fig.to_html(full_html=False, include_plotlyjs=False, config={"responsive": True})
-        )
+        return ui.HTML(fig.to_html(full_html=False, include_plotlyjs=False))
 
     # -----------------------------------------------------------------------
     # Risk groups tab
     # -----------------------------------------------------------------------
 
-    @output
     @render.ui
     def risk_groups_plot():
+        input.main_tabs()
         result, error = _run_pjnz()
         if result is None:
             return _loading_ui(error)
@@ -578,9 +551,7 @@ def server(input, output, session):
             paper_bgcolor="white",
         )
 
-        return ui.HTML(
-            fig.to_html(full_html=False, include_plotlyjs=False, config={"responsive": True})
-        )
+        return ui.HTML(fig.to_html(full_html=False, include_plotlyjs=False))
 
 
 app = App(app_ui, server)
