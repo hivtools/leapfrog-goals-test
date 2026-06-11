@@ -16,6 +16,7 @@ import leapfrog_compare.config as config
 from leapfrog_compare.indicator_map import (
     AGE_LABELS, ALL_AGES_INDICATORS, INDICATORS_1549,
     RISK_GROUPS, compute_rg_goals, compute_rg_spectrum,
+    compute_new_infections_rg_goals, compute_new_infections_rg_spectrum,
 )
 from leapfrog_compare.pjnz_runner import run_pjnz
 
@@ -160,6 +161,20 @@ app_ui = ui.page_fluid(
                 ),
                 ui.div(
                     ui.output_ui("risk_groups_plot"),
+                    style="overflow-x: auto; overflow-y: auto;",
+                ),
+            ),
+            ui.nav_panel(
+                "New infections",
+                ui.div(
+                    ui.div(
+                        ui.input_checkbox("disagg_sex_ni", "By sex", value=False),
+                        style="margin-top: 6px; margin-bottom: 6px;",
+                    ),
+                    style="padding: 10px 12px 4px 12px;",
+                ),
+                ui.div(
+                    ui.output_ui("new_infections_plot"),
                     style="overflow-x: auto; overflow-y: auto;",
                 ),
             ),
@@ -546,6 +561,80 @@ def server(input, output, session):
             height=max(500, n_rg * 250),
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
             title_text=f"Risk groups — {input.pjnz()}",
+            margin=dict(t=80, b=40, l=60, r=20),
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+        )
+
+        return ui.HTML(fig.to_html(full_html=False, include_plotlyjs=False))
+
+    # -----------------------------------------------------------------------
+    # New infections tab
+    # -----------------------------------------------------------------------
+
+    @render.ui
+    def new_infections_plot():
+        input.main_tabs()
+        result, error = _run_pjnz()
+        if result is None:
+            return _loading_ui(error)
+
+        modvars, goals_output, output_years = result
+        year_start, year_end = input.year_range()
+        disagg_sex = input.disagg_sex_ni()
+
+        years_arr = np.array(list(output_years))
+        mask = (years_arr >= year_start) & (years_arr <= year_end)
+        x_years = years_arr[mask].tolist()
+        first_year = int(min(output_years))
+        n_rg = len(RISK_GROUPS)
+        rg_row = {rg_name: i + 1 for i, (rg_name, _rg) in enumerate(RISK_GROUPS)}
+
+        def _align_spec(spec_values: np.ndarray):
+            year_idx = years_arr - first_year
+            valid = (year_idx >= 0) & (year_idx < len(spec_values))
+            combined = mask & valid
+            return years_arr[combined].tolist(), spec_values[year_idx[combined].astype(int)].tolist()
+
+        fig = make_subplots(
+            rows=n_rg,
+            cols=1,
+            subplot_titles=[rg_name for rg_name, _ in RISK_GROUPS],
+            shared_xaxes=False,
+            vertical_spacing=max(0.04, 0.3 / max(n_rg, 1)),
+        )
+        add_trace = _make_trace_helpers(fig, line_width=2)
+
+        try:
+            for rg_name, demo, values in compute_new_infections_rg_goals(goals_output, disagg_sex):
+                add_trace(
+                    x_years, values[mask].tolist(),
+                    _goals_label(demo), demo, None, rg_row[rg_name], 1,
+                )
+        except Exception as exc:
+            print(f"[app] New infections Goals failed: {exc}")
+
+        try:
+            for rg_name, demo, spec_values in compute_new_infections_rg_spectrum(modvars, disagg_sex):
+                spec_x, spec_y = _align_spec(spec_values)
+                if spec_x:
+                    add_trace(
+                        spec_x, spec_y,
+                        _spectrum_label(demo), demo, "dash", rg_row[rg_name], 1,
+                    )
+        except Exception as exc:
+            print(f"[app] New infections Spectrum failed: {exc}")
+
+        fig.update_xaxes(
+            showgrid=True, gridcolor="#e5e5e5",
+            range=[year_start - 1, year_end + 1],
+            tickformat="d", tickangle=45,
+        )
+        fig.update_yaxes(showgrid=True, gridcolor="#e5e5e5", rangemode="tozero")
+        fig.update_layout(
+            height=max(500, n_rg * 250),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            title_text=f"New infections by risk group — {input.pjnz()}",
             margin=dict(t=80, b=40, l=60, r=20),
             plot_bgcolor="white",
             paper_bgcolor="white",

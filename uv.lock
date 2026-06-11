@@ -79,12 +79,13 @@ wheels = [
 
 [[package]]
 name = "avenir-spectrum-common"
-version = "0.1.6"
+version = "0.1.7"
 source = { editable = "../../avenir/SpectrumEngine/SpectrumCommon" }
 dependencies = [
     { name = "avenir-common" },
     { name = "loguru" },
     { name = "numpy" },
+    { name = "openpyxl" },
     { name = "pandas" },
     { name = "pydantic" },
     { name = "requests" },
@@ -96,6 +97,7 @@ requires-dist = [
     { name = "avenir-common", specifier = ">=0.1.5" },
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "numpy", specifier = ">=2.4.4" },
+    { name = "openpyxl", specifier = ">=3.1.5" },
     { name = "pandas", specifier = ">=2.0.0" },
     { name = "pydantic", specifier = ">=2.10.6" },
     { name = "requests", specifier = ">=2.28.0" },
@@ -104,7 +106,7 @@ requires-dist = [
 
 [[package]]
 name = "avenir-spectrum-import-pjnz"
-version = "0.1.5"
+version = "0.1.6"
 source = { editable = "../../avenir/SpectrumEngine/Tools/ImportPJNZ" }
 dependencies = [
     { name = "avenir-common" },

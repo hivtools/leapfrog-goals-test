@@ -61,7 +61,7 @@ from SpectrumCommon.Const.HV.HVConst import (  # type: ignore[import-untyped]
     HV_MRH,
     HV_MSM,
 )
-from SpectrumCommon.Const.RN.RNConst import RN_AllVacc  # type: ignore[import-untyped]
+from SpectrumCommon.Const.RN.RNConst import RN_AllVacc, RN_UnV  # type: ignore[import-untyped]
 
 
 # ---------------------------------------------------------------------------
@@ -471,6 +471,7 @@ INDICATORS_1549: OrderedDict[str, Indicator1549Def] = OrderedDict([
 
 # Goals adults array: shape (nVAC+1=5, nRG+1=18, nCD4+1=17, nNS+1=3, n_years)
 _VAC_ALL = 4
+_VAC_UNV = 0
 _CD4_ALL = 16
 _RG_ALL  = 17
 
@@ -546,4 +547,43 @@ def compute_rg_spectrum(
             else:
                 den = hv_adults[1, HV_AllRisk, HV_AllHIV, RN_AllVacc] + hv_adults[2, HV_AllRisk, HV_AllHIV, RN_AllVacc]
             result.append((rg_name, "Total", 100 * num / np.where(den == 0, np.nan, den)))
+    return result
+
+
+def compute_new_infections_rg_goals(
+    goals_output: dict, disagg_sex: bool
+) -> list[tuple[str, str, np.ndarray]]:
+    """
+    New infections by risk group from Goals 'new_inf_vrs' (nVAC+1, nRG+1, nNS+1, n_years).
+    Returns list of (rg_name, demo, count).
+    """
+    new_inf = np.array(goals_output["new_inf_vrs"])
+    result: list[tuple[str, str, np.ndarray]] = []
+    for rg_name, rg_idx in RISK_GROUPS:
+        if disagg_sex:
+            for sex_idx, sex_label in enumerate(SEX_LABELS):
+                result.append((rg_name, sex_label, new_inf[_VAC_UNV, rg_idx, sex_idx]))
+        else:
+            values = new_inf[_VAC_UNV, rg_idx, 0] + new_inf[_VAC_UNV, rg_idx, 1]
+            result.append((rg_name, "Total", values))
+    return result
+
+
+def compute_new_infections_rg_spectrum(
+    modvars: dict, disagg_sex: bool
+) -> list[tuple[str, str, np.ndarray]]:
+    """
+    New infections by risk group from Spectrum HV_NewInfections_V1 (sex, rg, vac, year).
+    Uses RN_AllVacc for vaccine index. Returns list of (rg_name, demo, count).
+    """
+    arr = np.array(modvars[HV_NewInfectionsTag])
+    result: list[tuple[str, str, np.ndarray]] = []
+    for rg_name, _ in RISK_GROUPS:
+        spec_rg_idx = _SPEC_RG_INDICES[rg_name]
+        if disagg_sex:
+            for sex_idx, sex_label in enumerate(SEX_LABELS, start=1):  # 1=male, 2=female
+                result.append((rg_name, sex_label, arr[sex_idx, spec_rg_idx, RN_UnV]))
+        else:
+            values = arr[1, spec_rg_idx, RN_UnV] + arr[2, spec_rg_idx, RN_UnV]
+            result.append((rg_name, "Total", values))
     return result
