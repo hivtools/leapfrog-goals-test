@@ -16,8 +16,10 @@ from leapfrog_compare.comparison_module import (
     age_profile_panel_server, age_profile_panel_ui, averted_panel_server, averted_panel_ui,
     data_panel_server, data_panel_ui, facet_panel_server, facet_panel_ui, multi_facet_panel_server,
     multi_facet_panel_ui, multi_pjnz_panel_server, multi_pjnz_panel_ui, multi_plot_panel_server,
-    multi_plot_panel_ui, multi_risk_group_panel_server, multi_risk_group_panel_ui,
-    plot_panel_server, plot_panel_ui, risk_group_panel_server, risk_group_panel_ui,
+    multi_plot_panel_ui, multi_resource_needs_panel_server, multi_resource_needs_panel_ui,
+    multi_risk_group_panel_server, multi_risk_group_panel_ui,
+    plot_panel_server, plot_panel_ui, resource_needs_panel_server, resource_needs_panel_ui,
+    risk_group_panel_server, risk_group_panel_ui,
 )
 from leapfrog_compare.eppasm_indicator_map import (
     EPPASM_ALL_AGES_INDICATOR_NAMES, EPPASM_FIFTEEN_49_INDICATOR_NAMES,
@@ -27,6 +29,7 @@ from leapfrog_compare.eppasm_runner import run_eppasm_both
 from leapfrog_compare.indicator_map import (
     AGE_LABELS, AGE_PROFILE_INDICATOR_NAMES, ALL_AGES_INDICATOR_NAMES, CHILD_CD4_INDICATOR_MAP,
     CHILD_CD4_INDICATOR_NAMES, DEATHS_INDICATOR_NAMES, FIFTEEN_49_INDICATOR_NAMES, INDICATOR_MAP,
+    PEOPLE_REACHED_INDICATOR_MAP, RESOURCES_REQUIRED_INDICATOR_MAP, RESOURCE_NEEDS_INDICATOR_NAMES,
     RISK_GROUP_INDICATOR_MAP, RISK_GROUP_INDICATOR_NAMES, RISK_GROUPS,
 )
 from leapfrog_compare.pjnz_classify import is_goals_pjnz
@@ -118,6 +121,15 @@ _AIM_SOURCES = [
 _EPPASM_SOURCES = [
     ComparisonSource(key="eppasm", label="eppasm", dash=None, primary=True),
     ComparisonSource(key="eppasm_lf", label="eppasm-leapfrog", dash="dash"),
+]
+
+# "Resource needs" tab: leapfrog Goals' num_people_reached / resources_required
+# vs the equivalent Spectrum modvars. No "dp_aim" source — resource needs are a
+# Goals-module output with no DP/AIM equivalent. "spectrum" reads raw modvars,
+# so needs_offset_align like every other raw-modvar source.
+_RESOURCE_NEEDS_SOURCES = [
+    ComparisonSource(key="goals", label="Leapfrog Goals", dash=None, default_visible=True),
+    ComparisonSource(key="spectrum", label="Spectrum", dash="dash", needs_offset_align=True),
 ]
 
 
@@ -328,6 +340,50 @@ _GOALS_SUBTABS = [
     ),
 ]
 
+# "Dataset" dropdown choices for the "Resource needs" sub-tab: label -> the
+# per-intervention IndicatorDef map reading that Goals output array.
+_RESOURCE_NEEDS_DATASETS = {
+    "People reached": PEOPLE_REACHED_INDICATOR_MAP,
+    "Resources required": RESOURCES_REQUIRED_INDICATOR_MAP,
+}
+
+
+@dataclass
+class ResourceNeedsSubTab:
+    """A sub-tab with a single-select "Dataset" dropdown (num_people_reached vs
+    resources_required) ahead of the usual indicator multiselect — see
+    comparison_module.resource_needs_panel_ui/server (single-PJNZ) and
+    multi_resource_needs_panel_ui/server (Multi PJNZ). `dataset_maps` is
+    label -> indicator_map; `sources` is always the goals/spectrum pair
+    (`_RESOURCE_NEEDS_SOURCES`)."""
+    id: str
+    label: str
+    dataset_maps: dict[str, dict]
+    indicator_names: list[str]
+    default_indicators: list[str]
+    sources: list[ComparisonSource]
+
+
+_GOALS_RESOURCE_NEEDS_SUBTABS = [
+    ResourceNeedsSubTab(
+        id="goals_resource_needs", label="Resource needs",
+        dataset_maps=_RESOURCE_NEEDS_DATASETS,
+        indicator_names=RESOURCE_NEEDS_INDICATOR_NAMES,
+        default_indicators=RESOURCE_NEEDS_INDICATOR_NAMES[:3],
+        sources=_RESOURCE_NEEDS_SOURCES,
+    ),
+]
+
+_MULTI_RESOURCE_NEEDS_SUBTABS = [
+    ResourceNeedsSubTab(
+        id="multi_resource_needs", label="Resource needs",
+        dataset_maps=_RESOURCE_NEEDS_DATASETS,
+        indicator_names=RESOURCE_NEEDS_INDICATOR_NAMES,
+        default_indicators=RESOURCE_NEEDS_INDICATOR_NAMES[:3],
+        sources=_RESOURCE_NEEDS_SOURCES,
+    ),
+]
+
 _GOALS_RISKGROUP_SUBTABS = [
     RiskGroupSubTab(
         id="goals_riskgroups", label="Risk groups",
@@ -446,6 +502,7 @@ def _build_tab_ui(
     risk_group_subtabs: list[RiskGroupSubTab] = (),
     facet_subtabs: list[FacetSubTab] = (),
     age_profile_subtabs: list[AgeProfileSubTab] = (),
+    resource_needs_subtabs: list[ResourceNeedsSubTab] = (),
     wip_note: str | None = None,
 ):
     banner = [_wip_banner(wip_note)] if wip_note else []
@@ -492,6 +549,17 @@ def _build_tab_ui(
                     ),
                 )
                 for apt in age_profile_subtabs
+            ], *[
+                ui.nav_panel(
+                    rnt.label,
+                    resource_needs_panel_ui(
+                        rnt.id,
+                        dataset_labels=list(rnt.dataset_maps),
+                        indicator_names=rnt.indicator_names,
+                        default_indicators=rnt.default_indicators,
+                    ),
+                )
+                for rnt in resource_needs_subtabs
             ]),
             fillable=True,
         ),
@@ -508,6 +576,7 @@ def _wire_tab_server(
     risk_group_subtabs: list[RiskGroupSubTab] = (),
     facet_subtabs: list[FacetSubTab] = (),
     age_profile_subtabs: list[AgeProfileSubTab] = (),
+    resource_needs_subtabs: list[ResourceNeedsSubTab] = (),
 ):
     data_run, year_range, pjnz_label = data_panel_server(
         top_id, pjnz_files=pjnz_files, pjnz_choices=pjnz_choices,
@@ -553,6 +622,15 @@ def _wire_tab_server(
             sources=apt.sources,
             title_prefix=apt.title_prefix,
         )
+    for rnt in resource_needs_subtabs:
+        resource_needs_panel_server(
+            rnt.id,
+            data_run=data_run,
+            year_range=year_range,
+            pjnz_label=pjnz_label,
+            dataset_maps=rnt.dataset_maps,
+            sources=rnt.sources,
+        )
 
 
 def _build_multi_tab_ui(
@@ -563,6 +641,7 @@ def _build_multi_tab_ui(
     risk_group_subtabs: list[MultiRiskGroupSubTab] = (),
     facet_subtabs: list[MultiFacetSubTab] = (),
     averted_subtabs: list[AvertedSubTab] = (),
+    resource_needs_subtabs: list[ResourceNeedsSubTab] = (),
 ):
     return ui.nav_panel(
         title,
@@ -608,6 +687,18 @@ def _build_multi_tab_ui(
                     averted_panel_ui(at.id, indicator_choices=at.indicator_choices),
                 )
                 for at in averted_subtabs
+            ], *[
+                ui.nav_panel(
+                    rnt.label,
+                    multi_resource_needs_panel_ui(
+                        rnt.id,
+                        dataset_labels=list(rnt.dataset_maps),
+                        indicator_names=rnt.indicator_names,
+                        default_indicators=rnt.default_indicators,
+                        initial_sources=rnt.sources,
+                    ),
+                )
+                for rnt in resource_needs_subtabs
             ]),
             fillable=True,
         ),
@@ -621,6 +712,7 @@ def _wire_multi_tab_server(
     risk_group_subtabs: list[MultiRiskGroupSubTab] = (),
     facet_subtabs: list[MultiFacetSubTab] = (),
     averted_subtabs: list[AvertedSubTab] = (),
+    resource_needs_subtabs: list[ResourceNeedsSubTab] = (),
 ):
     data_by_pjnz, year_range, model = multi_pjnz_panel_server(
         top_id,
@@ -665,6 +757,14 @@ def _wire_multi_tab_server(
             indicator_choices=at.indicator_choices,
             sources=lambda: _GOALS_SOURCES if model() == "Goals" else _AIM_SOURCES,
         )
+    for rnt in resource_needs_subtabs:
+        multi_resource_needs_panel_server(
+            rnt.id,
+            data_by_pjnz=data_by_pjnz,
+            year_range=year_range,
+            dataset_maps=rnt.dataset_maps,
+            sources=rnt.sources,
+        )
 
 
 app_ui = ui.page_navbar(
@@ -676,6 +776,7 @@ app_ui = ui.page_navbar(
         "goals", "Goals", _GOALS_SUBTABS,
         pjnz_choices=_pjnz_stems_goals_initial, risk_group_subtabs=_GOALS_RISKGROUP_SUBTABS,
         facet_subtabs=_GOALS_CHILD_SUBTABS, age_profile_subtabs=_GOALS_AGEPROFILE_SUBTABS,
+        resource_needs_subtabs=_GOALS_RESOURCE_NEEDS_SUBTABS,
     ),
     _build_tab_ui(
         "eppasm", "EPPASM", _EPPASM_SUBTABS,
@@ -685,6 +786,7 @@ app_ui = ui.page_navbar(
         "multi", "Multi PJNZ", _MULTI_SUBTABS,
         risk_group_subtabs=_MULTI_RISKGROUP_SUBTABS, facet_subtabs=_MULTI_CHILD_SUBTABS,
         averted_subtabs=_MULTI_AVERTED_SUBTABS,
+        resource_needs_subtabs=_MULTI_RESOURCE_NEEDS_SUBTABS,
     ),
     id="main_nav",
     title="Leapfrog Comparison",
@@ -707,7 +809,8 @@ def server(input, output, session):
     _wire_tab_server(
         "goals", _goals_run_fn, _GOALS_SUBTABS,
         risk_group_subtabs=_GOALS_RISKGROUP_SUBTABS, facet_subtabs=_GOALS_CHILD_SUBTABS,
-        age_profile_subtabs=_GOALS_AGEPROFILE_SUBTABS, pjnz_choices=pjnz_stems_goals,
+        age_profile_subtabs=_GOALS_AGEPROFILE_SUBTABS,
+        resource_needs_subtabs=_GOALS_RESOURCE_NEEDS_SUBTABS, pjnz_choices=pjnz_stems_goals,
     )
     _wire_tab_server(
         "eppasm", _eppasm_run_fn, _EPPASM_SUBTABS, show_rerun_button=True,
@@ -717,6 +820,7 @@ def server(input, output, session):
         "multi", _MULTI_SUBTABS,
         risk_group_subtabs=_MULTI_RISKGROUP_SUBTABS, facet_subtabs=_MULTI_CHILD_SUBTABS,
         averted_subtabs=_MULTI_AVERTED_SUBTABS,
+        resource_needs_subtabs=_MULTI_RESOURCE_NEEDS_SUBTABS,
     )
 
 

@@ -5,7 +5,7 @@ Edit this file to match your local setup before running the app.
 from pathlib import Path
 
 # Directory that contains the .PJNZ files to process.
-PJNZ_DIR: Path = Path("~/Downloads")
+PJNZ_DIR: Path = Path("~/Downloads/LFG_Spectrum_Compare_Files")
 
 # Seconds between checks of PJNZ_DIR for added/removed/modified .PJNZ files.
 # Files are picked up automatically within this interval — no app restart needed.

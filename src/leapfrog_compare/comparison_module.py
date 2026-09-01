@@ -244,6 +244,98 @@ def plot_panel_server(
 
 
 # ---------------------------------------------------------------------------
+# Resource-needs panel: like plot_panel, but with a single-select "Dataset"
+# dropdown that switches which indicator_map is used (leapfrog Goals'
+# num_people_reached vs resources_required, each with its own map keyed by the
+# same intervention names) ahead of the usual indicator multiselect. No age/sex
+# disaggregation controls — resource-needs arrays carry neither axis. Used by
+# the Goals tab's "Resource needs" sub-tab.
+# ---------------------------------------------------------------------------
+
+@module.ui
+def resource_needs_panel_ui(
+    *,
+    dataset_labels: list[str],
+    indicator_names: list[str],
+    default_indicators: list[str],
+):
+    return ui.div(
+        ui.input_select(
+            "dataset",
+            label="Dataset",
+            choices=dataset_labels,
+            selected=dataset_labels[0] if dataset_labels else None,
+        ),
+        ui.input_selectize(
+            "indicators",
+            label="Indicators",
+            choices=indicator_names,
+            multiple=True,
+            selected=default_indicators,
+            options={"plugins": ["remove_button"]},
+        ),
+        ui.div(
+            ui.output_ui("comparison_plot"),
+            style="overflow-x: auto; overflow-y: auto;",
+        ),
+        style="padding-top: 12px;",
+    )
+
+
+@module.server
+def resource_needs_panel_server(
+    input,
+    output,
+    session,
+    *,
+    data_run: Callable[[], tuple],
+    year_range: Callable[[], tuple[int, int]],
+    pjnz_label: Callable[[], str],
+    dataset_maps: dict[str, dict[str, Any]],
+    sources: list[ComparisonSource],
+    no_pjnz_message: str = "No PJNZ files found, check 'PJNZ_DIR' in 'config.py'.",
+):
+    @output
+    @render.ui
+    def comparison_plot():
+        result, error = data_run()
+        if result is None:
+            if error:
+                return ui.div(
+                    ui.p(
+                        f"Error running model for '{pjnz_label()}':",
+                        style="font-weight:bold; color:#c0392b; margin-bottom:4px;",
+                    ),
+                    ui.pre(error, style="white-space:pre-wrap; color:#c0392b; font-size:0.85em;"),
+                )
+            return ui.p(no_pjnz_message)
+
+        data_by_source, output_years = result
+        dataset = input.dataset()
+        indicator_map = dataset_maps.get(dataset) or next(iter(dataset_maps.values()))
+        selected_indicators = input.indicators()
+        year_start, year_end = year_range()
+
+        if not selected_indicators:
+            return ui.p("Select at least one indicator.")
+
+        html = render_comparison(
+            indicator_map=indicator_map,
+            data_by_source=data_by_source,
+            sources=sources,
+            selected_indicators=selected_indicators,
+            output_years=output_years,
+            year_start=year_start,
+            year_end=year_end,
+            disagg_age=False,
+            disagg_sex=False,
+            title=f"{dataset} — {pjnz_label()}",
+            age_labels=[],
+        )
+        return ui.HTML(html)
+
+
+# ---------------------------------------------------------------------------
 # Risk-group panel: a single-select Indicator dropdown (choosing between
 # risk-group-faceted indicators, e.g. population share vs. new infections,
 # each with its own compute_fns/title/units — see indicator_map.RiskGroupIndicatorDef)
@@ -752,6 +844,113 @@ def multi_plot_panel_server(
             year_start=year_start,
             year_end=year_end,
             title="Multi PJNZ comparison",
+        )
+        html = fig.to_html(full_html=False, include_plotlyjs=False, config={"responsive": True})
+        return ui.div(*error_banner, ui.HTML(html))
+
+
+# ---------------------------------------------------------------------------
+# Multi PJNZ resource-needs panel: multi_plot_panel plus the single-select
+# "Dataset" dropdown from resource_needs_panel_ui — one line per (PJNZ file,
+# source) per intervention, for whichever of num_people_reached /
+# resources_required is selected. Used by the Multi PJNZ tab's "Resource needs"
+# sub-tab. Always wired with _RESOURCE_NEEDS_SOURCES (goals/spectrum): resource
+# needs only exist for the Goals model, so under Model=DP/AIM these render
+# nothing, same missing-key-skip convention as the Multi risk-group sub-tab.
+# ---------------------------------------------------------------------------
+
+@module.ui
+def multi_resource_needs_panel_ui(
+    *,
+    dataset_labels: list[str],
+    indicator_names: list[str],
+    default_indicators: list[str],
+    initial_sources: list[ComparisonSource],
+):
+    return ui.div(
+        ui.input_checkbox_group(
+            "visible_sources",
+            "Show lines",
+            choices={s.key: s.label for s in initial_sources},
+            selected=default_visible_keys(initial_sources),
+        ),
+        ui.input_select(
+            "dataset",
+            label="Dataset",
+            choices=dataset_labels,
+            selected=dataset_labels[0] if dataset_labels else None,
+        ),
+        ui.input_selectize(
+            "indicators",
+            label="Indicators",
+            choices=indicator_names,
+            multiple=True,
+            selected=default_indicators,
+            options={"plugins": ["remove_button"]},
+        ),
+        ui.div(
+            ui.output_ui("comparison_plot"),
+            style="overflow-x: auto; overflow-y: auto;",
+        ),
+        style="padding-top: 12px;",
+    )
+
+
+@module.server
+def multi_resource_needs_panel_server(
+    input,
+    output,
+    session,
+    *,
+    data_by_pjnz: Callable[[], tuple[dict[str, tuple], dict[str, str]]],
+    year_range: Callable[[], tuple[int, int]],
+    dataset_maps: dict[str, dict[str, Any]],
+    sources: list[ComparisonSource],
+    no_pjnz_message: str = "Select at least one PJNZ file.",
+):
+    @output
+    @render.ui
+    def comparison_plot():
+        data, errors = data_by_pjnz()
+
+        error_banner = [
+            ui.div(
+                ui.p(
+                    f"Error running model for '{stem}':",
+                    style="font-weight:bold; color:#c0392b; margin-bottom:4px;",
+                ),
+                ui.pre(msg, style="white-space:pre-wrap; color:#c0392b; font-size:0.85em;"),
+            )
+            for stem, msg in errors.items()
+        ]
+
+        if not data:
+            if error_banner:
+                return ui.div(*error_banner)
+            return ui.p(no_pjnz_message)
+
+        selected_indicators = input.indicators()
+        if not selected_indicators:
+            return ui.div(*error_banner, ui.p("Select at least one indicator."))
+
+        dataset = input.dataset()
+        indicator_map = dataset_maps.get(dataset) or next(iter(dataset_maps.values()))
+        year_start, year_end = year_range()
+        stems = list(data.keys())
+        data_by_source_map = {stem: result[0] for stem, result in data.items()}
+        output_years_by_pjnz = {stem: result[1] for stem, result in data.items()}
+
+        active_sources = visible_sources(sources, input.visible_sources() or ())
+        fig = render_multi_pjnz_comparison(
+            indicator_map=indicator_map,
+            data_by_pjnz=data_by_source_map,
+            output_years_by_pjnz=output_years_by_pjnz,
+            sources=active_sources,
+            selected_indicators=selected_indicators,
+            pjnz_stems=stems,
+            year_start=year_start,
+            year_end=year_end,
+            title=f"{dataset} — Multi PJNZ comparison",
         )
         html = fig.to_html(full_html=False, include_plotlyjs=False, config={"responsive": True})
         return ui.div(*error_banner, ui.HTML(html))

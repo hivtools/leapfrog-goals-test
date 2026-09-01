@@ -96,7 +96,51 @@ from SpectrumCommon.Const.HV.HVConst import (  # type: ignore[import-untyped]
     HV_MRH,
     HV_MSM,
 )
-from SpectrumCommon.Const.RN.RNConst import RN_AllVacc, RN_UnV  # type: ignore[import-untyped]
+from SpectrumCommon.Const.RN.RNConst import (  # type: ignore[import-untyped]
+    RN_AllVacc,
+    RN_UnV,
+    RN_CompSexEd,
+    RN_FSW,
+    RN_EconomicStrengthening,
+    RN_IDUHarmRed,
+    RN_IDUNSEP,
+    RN_IDUDrugSub,
+    RN_MSMOutreach,
+    RN_Condom,
+    RN_CondomSupply,
+    RN_ANCTesting,
+    RN_MC15_49,
+    RN_PrEPOralDaily,
+    RN_PrEPOralMonthly,
+    RN_PrEPOralPlusCon,
+    RN_PrEPInject1Mo,
+    RN_PrEPInject2Mo,
+    RN_PrEPInject6Mo,
+    RN_PrEPRing,
+    RN_PrEPbNABs,
+    RN_PrEPImplant,
+    RN_PrEP_PEP,
+    RN_HIVTestANCVisit,
+    RN_HIVWomanCounceled,
+    RN_ExposedInfantTest,
+    RN_AdultOnART,
+    RN_ChildOnART,
+    RN_Vaccines,
+    RN_CureAdultsChildren,
+    RN_CureNeonates,
+    RN_CURE_CHILDREN,
+    RN_AHDTreatment,
+    RN_POC_CD4_Int,
+    RN_POC_VL_Int,
+    RN_VMM,
+    RN_THERAPEUTIC_VAC,
+    RN_FUNC_CURE,
+    RN_LONG_ACT_TREAT,
+)
+from SpectrumCommon.Const.RN.RNTags import (  # type: ignore[import-untyped]
+    RN_NumberPeopleReachedTag,
+    RN_ResourcesRequiredTag,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -1526,3 +1570,112 @@ AGE_PROFILE_INDICATOR_NAMES: list[str] = [
 
 def get_indicator_names() -> list[str]:
     return list(INDICATOR_MAP.keys())
+
+
+# ---------------------------------------------------------------------------
+# "Resource needs" tab: leapfrog Goals' num_people_reached / resources_required
+# vs Spectrum's RN_NumberPeopleReached_V1 / RN_ResourcesRequired_V1. Both the
+# Goals output arrays and the Spectrum modvars are (nIntervnRN + 4, n_years),
+# indexed by the RN_* intervention constant (row = the constant's integer
+# value); the year axis is already aligned to output_years on the Goals side and
+# positionally offset from first_year on the Spectrum side (needs_offset_align).
+# One plot per intervention row, each a single flat total line per source —
+# these outputs carry no age or sex axis.
+#
+# Spectrum only populates RN_NumberPeopleReached_V1 / RN_ResourcesRequired_V1
+# once its Resource Needs module has actually run and written results back; on a
+# plain PJNZ import they read back empty (0-d), same as the AM_ResNonAIDSDeaths*
+# report modvars noted in the "Deaths" section above. _spec_rn_row detects that
+# and returns [] so the Spectrum line is simply omitted rather than erroring.
+# ---------------------------------------------------------------------------
+
+# (row index, plot title) for every intervention, in display order. The row
+# index is the RN_* intervention constant — the same integer indexes both the
+# Goals output arrays and the Spectrum modvars.
+_REACHED_INTERVENTIONS: tuple[tuple[int, str], ...] = (
+    (RN_CompSexEd, "Comprehensive sexuality education"),
+    (RN_FSW, "Female sex workers and clients"),
+    (RN_EconomicStrengthening, "Economic strengthening"),
+    (RN_IDUHarmRed, "PWID harm reduction"),
+    (RN_IDUNSEP, "PWID needle and syringe exchange"),
+    (RN_IDUDrugSub, "Opioid agonist maintenance therapy"),
+    (RN_MSMOutreach, "Men who have sex with men"),
+    (RN_Condom, "Condom promotion"),
+    (RN_CondomSupply, "Condom supply"),
+    (RN_ANCTesting, "ANC testing"),
+    (RN_MC15_49, "Male circumcision"),
+    (RN_PrEPOralDaily, "Oral PrEP (daily)"),
+    (RN_PrEPOralMonthly, "Oral PrEP (monthly)"),
+    (RN_PrEPOralPlusCon, "Oral PrEP plus contraceptive"),
+    (RN_PrEPInject1Mo, "Injectable PrEP (1 month)"),
+    (RN_PrEPInject2Mo, "Injectable PrEP (2 month)"),
+    (RN_PrEPInject6Mo, "Injectable PrEP (6 month)"),
+    (RN_PrEPRing, "PrEP ring"),
+    (RN_PrEPbNABs, "bNABs"),
+    (RN_PrEPImplant, "Implantable PrEP"),
+    (RN_PrEP_PEP, "PEP"),
+    (RN_HIVTestANCVisit, "HIV test at ANC visit"),
+    (RN_HIVWomanCounceled, "HIV-positive women counselled"),
+    (RN_ExposedInfantTest, "Infant males circumcised"),
+    (RN_AdultOnART, "Adults on ART"),
+    (RN_ChildOnART, "Children on ART"),
+    (RN_Vaccines, "Prophylactic vaccine"),
+    (RN_CureAdultsChildren, "Cure (adults and children)"),
+    (RN_CureNeonates, "Cure (neonates)"),
+    (RN_CURE_CHILDREN, "Cure (children)"),
+    (RN_AHDTreatment, "AHD treatment"),
+    (RN_POC_CD4_Int, "POC CD4 test"),
+    (RN_POC_VL_Int, "POC VL test"),
+    (RN_VMM, "Vaginal microbiome modification"),
+    (RN_THERAPEUTIC_VAC, "Therapeutic vaccine"),
+    (RN_FUNC_CURE, "Functional cure"),
+    (RN_LONG_ACT_TREAT, "Long acting treatment"),
+)
+
+
+def _goals_rn_row(key: str, idx: int) -> Callable:
+    """One intervention row of a Goals (nIntervnRN + 4, n_years) resource-needs
+    array (`num_people_reached` or `resources_required`), returned as a single
+    flat total line — no age/sex axis to split on."""
+    def fn(output: dict, _disagg_age: bool, _disagg_sex: bool) -> list[tuple[str, np.ndarray]]:
+        return [("Total", output[key][idx])]
+    return fn
+
+
+def _spec_rn_row(tag: str, idx: int) -> Callable:
+    """Matching intervention row of a Spectrum resource-needs modvar
+    (RN_NumberPeopleReached_V1 / RN_ResourcesRequired_V1). Only populated once
+    Spectrum's Resource Needs module has run; on a plain import the modvar comes
+    back empty (0-d) or absent — return [] so the Spectrum line is dropped
+    rather than raising."""
+    def fn(modvars: dict, _disagg_age: bool, _disagg_sex: bool) -> list[tuple[str, np.ndarray]]:
+        arr = np.asarray(modvars.get(tag))
+        if arr.ndim < 2 or idx >= arr.shape[0]:
+            return []
+        return [("Total", arr[idx])]
+    return fn
+
+
+def _resource_needs_map(goals_key: str, spec_tag: str) -> OrderedDict[str, IndicatorDef]:
+    """One IndicatorDef per intervention, reading `goals_key` from the Goals
+    output dict and `spec_tag` from the Spectrum modvars — keyed by the plot
+    title so each "Resource needs" sub-tab gets its own map (the two sub-tabs
+    share intervention names, so they can't live in one dict)."""
+    return OrderedDict(
+        (name, IndicatorDef(disagg={
+            "goals": _goals_rn_row(goals_key, idx),
+            "spectrum": _spec_rn_row(spec_tag, idx),
+        }))
+        for idx, name in _REACHED_INTERVENTIONS
+    )
+
+
+PEOPLE_REACHED_INDICATOR_MAP: OrderedDict[str, IndicatorDef] = _resource_needs_map(
+    "num_people_reached", RN_NumberPeopleReachedTag,
+)
+RESOURCES_REQUIRED_INDICATOR_MAP: OrderedDict[str, IndicatorDef] = _resource_needs_map(
+    "resources_required", RN_ResourcesRequiredTag,
+)
+
+# Intervention plot titles, shared by both "Resource needs" sub-tabs.
+RESOURCE_NEEDS_INDICATOR_NAMES: list[str] = [name for _idx, name in _REACHED_INTERVENTIONS]
