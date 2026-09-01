@@ -739,24 +739,49 @@ def _spec_aidsdeath_1549_disagg(modvars: dict, _disagg_age: bool, disagg_sex: bo
 
 
 def _spec_hivpop_1549_disagg(modvars: dict, _disagg_age: bool, disagg_sex: bool) -> list[tuple[str, np.ndarray]]:
-    """HV_TotalAdultsHIV_V1 — adults HIV (15+), labelled '15-49' for colour consistency
-    with the other 15-49-tab indicators (no true 15-49-only slice available)."""
+    """HV_TotalAdultsHIV_V1 — Spectrum's Goals/HV-module adult PLHIV total. Like
+    leapfrog's own Goals output, it covers only the 15-49 risk-group cohort
+    (verified against a PJNZ import: matches AM_HIVBySingleAgeTag summed over ages
+    15-49, ~0.35x the 15-80 sum), so the '15-49' label is accurate — not a
+    stand-in for a missing slice."""
     arr = np.array(modvars[HV_TotalAdultsHIVTag])
     if disagg_sex:
         return [("Male", arr[1]), ("Female", arr[2])]
     return [("15-49", arr[1] + arr[2])]
 
 
-def _spec_art_disagg(modvars: dict, _disagg_age: bool, disagg_sex: bool) -> list[tuple[str, np.ndarray]]:
-    """HV_TotalAdultsART_V1 (3, 81): sex [0]=both, [1]=male, [2]=female. No age disagg."""
-    arr = np.array(modvars[HV_TotalAdultsARTTag])
+def _am_art_15plus_disagg(modvars: dict, disagg_age: bool, disagg_sex: bool) -> list[tuple[str, np.ndarray]]:
+    """Genuine 15+ on-ART total, from AM_OnARTBySingleAgeTag (sex=3, single_age=81,
+    T) restricted to ages 15-80 — this lines up with leapfrog's h_artpop-derived
+    "dp_aim" line, which spans ages 15-80 and has no under-15 data.
+
+    Used for BOTH the "spectrum" and "spectrum_aim" sources of the "Total number
+    receiving ART (15+)" indicator. HV_TotalAdultsART_V1 is deliberately NOT used
+    here: it is Spectrum's Goals/HV-module total and — like leapfrog's own
+    hv.total_on_art — only covers the 15-49 risk-group cohort (verified against a
+    PJNZ import: it matches AM_OnARTBySingleAgeTag summed over ages 15-49 to
+    within ~1%, and is only ~0.35x the 15-80 sum). Using it here compared a
+    Spectrum 15-49 figure against a leapfrog 15+ figure.
+
+    In the age-faceted view, falls back to the standard 5-year-band
+    disaggregation (same as the other AM_* single-age sources)."""
+    if disagg_age:
+        return _am_art_disagg(modvars, True, disagg_sex)
+    arr = np.array(modvars[AM_OnARTBySingleAgeTag])
     if disagg_sex:
-        return [("Male", arr[1]), ("Female", arr[2])]
-    return [("Total", arr[1] + arr[2])]
+        return [
+            ("Male", arr[1, 15:81, :].sum(axis=0)),
+            ("Female", arr[2, 15:81, :].sum(axis=0)),
+        ]
+    return [("Total", (arr[1, 15:81, :] + arr[2, 15:81, :]).sum(axis=0))]
 
 
 def _spec_art_1549_disagg(modvars: dict, _disagg_age: bool, disagg_sex: bool) -> list[tuple[str, np.ndarray]]:
-    """HV_TotalAdultsART_V1, labelled '15-49' for the 15-49-tab "Total on ART" indicator."""
+    """HV_TotalAdultsART_V1 — Spectrum's Goals/HV-module on-ART total. Covers only
+    the 15-49 risk-group cohort (verified against a PJNZ import: matches
+    AM_OnARTBySingleAgeTag summed over ages 15-49 to within ~1%, vs ~0.35x the
+    15-80 sum), so the '15-49' label is accurate. The genuine 15+ figure comes
+    from AM_OnARTBySingleAgeTag instead — see _am_art_15plus_disagg."""
     arr = np.array(modvars[HV_TotalAdultsARTTag])
     if disagg_sex:
         return [("Male", arr[1]), ("Female", arr[2])]
@@ -1410,8 +1435,11 @@ INDICATOR_MAP: OrderedDict[str, IndicatorDef] = OrderedDict([
     ("Total number receiving ART (15+)", IndicatorDef(
         disagg={
             "dp_aim": _disagg_art(),
-            "spectrum": _spec_art_disagg,
-            "spectrum_aim": _am_art_disagg,
+            # Both use AM_OnARTBySingleAgeTag summed over ages 15-80 — a genuine
+            # 15+ figure. HV_TotalAdultsART_V1 is NOT used here: it is Spectrum's
+            # Goals/HV 15-49 total (see _am_art_15plus_disagg / _spec_art_1549_disagg).
+            "spectrum": _am_art_15plus_disagg,
+            "spectrum_aim": _am_art_15plus_disagg,
         },
         age_profile={
             "dp_aim": _disagg_art_single_age,

@@ -18,9 +18,9 @@ dependencies = [
 ]
 
 # Uncomment and set the path to use local version of leapfrog-goals when developing
-[tool.uv.sources]
-leapfrog-goals = { path = "../leapfrog/goals", editable = true }
-leapfrog-py = { path = "../leapfrog/leapfrog-py", editable = true }
+#[tool.uv.sources]
+#leapfrog-goals = { path = "../leapfrog/goals", editable = true }
+#leapfrog-py = { path = "../leapfrog/leapfrog-py", editable = true }
 #avenir-spectrum-common = { path = "C:\\Users\\Test\\projects\\SpectrumEngine\\SpectrumCommon", editable = true }
 #avenir-spectrum-import-pjnz = { path = "C:\\Users\\Test\\projects\\SpectrumEngine\\Tools\\ImportPJNZ", editable = true }
 
